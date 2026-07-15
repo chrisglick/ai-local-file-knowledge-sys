@@ -28,17 +28,27 @@ strengths, and limitations. Read that for the *why*; this file is the *how to ru
 Copy the skills into your Claude Code skills directory:
 
 ```bash
-git clone https://github.com/<you>/ai-local-file-knowledge-sys.git
+git clone https://github.com/chrisglick/ai-local-file-knowledge-sys.git
+mkdir -p ~/.claude/skills
 cp -r ai-local-file-knowledge-sys/skills/* ~/.claude/skills/
+pip install pyyaml
 ```
 
-The only dependency is Python with `pyyaml` (`pip install pyyaml`) — the transcript distiller is
-stdlib-only. Verify:
+`mkdir -p` matters: `cp` fails with *"target is not a directory"* if you've never created a skill
+before. On Windows PowerShell, swap the copy for
+`Copy-Item -Recurse ai-local-file-knowledge-sys\skills\* $HOME\.claude\skills\`.
+
+`pyyaml` is the only runtime dependency — the transcript distiller is stdlib-only. Verify:
 
 ```bash
-cd ~/.claude/skills/init-ai-workspace
-python okf_normalize.py --version      # okf_normalize tool 0.8; OKF standard 0.1
-python -m pytest -q                    # 51 passed
+python ~/.claude/skills/init-ai-workspace/okf_normalize.py --version
+# okf_normalize tool 0.8; OKF standard 0.1
+```
+
+Optionally run the test suite (needs `pip install pytest`):
+
+```bash
+cd ~/.claude/skills/init-ai-workspace && python -m pytest -q   # 51 passed
 ```
 
 **Upgrading from 0.7?** `--check` now warns on any `source:` that can't be opened — notes citing a
