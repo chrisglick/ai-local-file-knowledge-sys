@@ -11,6 +11,7 @@ reads fine in any text editor.
 
 **Design doc: [KNOWLEDGE-SYSTEM.md](KNOWLEDGE-SYSTEM.md)** — structure, format, disciplines,
 strengths, and limitations. Read that for the *why*; this file is the *how to run it*.
+**Version history and upgrade warnings: [CHANGELOG.md](CHANGELOG.md).**
 
 ## The three skills
 
@@ -31,12 +32,18 @@ git clone https://github.com/<you>/ai-local-file-knowledge-sys.git
 cp -r ai-local-file-knowledge-sys/skills/* ~/.claude/skills/
 ```
 
-The only dependency is Python with `pyyaml` (`pip install pyyaml`). Verify the engine:
+The only dependency is Python with `pyyaml` (`pip install pyyaml`) — the transcript distiller is
+stdlib-only. Verify:
 
 ```bash
-python ~/.claude/skills/init-ai-workspace/okf_normalize.py --version   # okf_normalize tool 0.7; OKF standard 0.1
-python -m pytest ~/.claude/skills/init-ai-workspace/test_okf_normalize.py -q   # 33 passed
+cd ~/.claude/skills/init-ai-workspace
+python okf_normalize.py --version      # okf_normalize tool 0.8; OKF standard 0.1
+python -m pytest -q                    # 51 passed
 ```
+
+**Upgrading from 0.7?** `--check` now warns on any `source:` that can't be opened — notes citing a
+session in prose will start failing. That's intended (those citations were never checkable), but
+it isn't silent: run `ai/scripts/okf --check` after updating. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Quickstart
 
@@ -54,11 +61,17 @@ project-root/
     ├── memory/     # the OKF bundle (timeless wiki)
     ├── plans/      # feature specs (frozen when built)
     ├── session/    # dated journal (append-only)
+    │   └── raw/    # archived transcripts: <id>.md committed, <id>.jsonl gitignored
     └── scripts/okf # 10-line shim → the global engine
 ```
 
 Then `/end-session` at each session close. If the project has years of undistilled history, run
 `/backfill-memory` once to seed it.
+
+**Run `/init-ai-workspace` sooner rather than later.** Claude Code deletes session files older than
+`cleanupPeriodDays` ([default 30](https://code.claude.com/docs/en/settings)) at startup. Anything
+older than that window is already gone — archiving protects sessions from the day you adopt it, and
+`/backfill-memory` cannot mine transcripts that no longer exist.
 
 ## The engine
 

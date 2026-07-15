@@ -138,7 +138,7 @@ prose and redacts hits, because people paste keys into chat. It is **defense in 
 clearance**: passwords, connection strings, PII, and internal hostnames have no detectable shape, so
 `0 hits` means "no issuer-formatted token," never "safe." Read the file before committing it.
 
-## Engine: `okf_normalize.py` (v0.7, OKF v0.1)
+## Engine: `okf_normalize.py` (v0.8, OKF v0.1)
 
 One file, `pyyaml`-only. Lives once in the `init-ai-workspace` skill dir; hooks in `~/.claude/hooks/`; project carries only the 10-line `ai/scripts/okf` shim. Nothing vendored → one engine to upgrade.
 

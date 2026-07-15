@@ -33,7 +33,8 @@ from pathlib import Path
 import yaml
 
 # Versions — stamped so projects can detect when their copy/standard is behind.
-TOOL_VERSION = "0.7"  # 0.7: --suggest-links (cross-link candidate surfacer). 0.6: agent-memory-research
+TOOL_VERSION = "0.8"  # 0.8: conversation provenance -- prose/unresolvable `source:` now warns (was
+                      # silently exempt). 0.7: --suggest-links. 0.6: agent-memory-research
 # adoptions (`workaround` type, typed+validated `relations`, `verified_on` 90-day decay). 0.5: --review
 # promotion queue. 0.4: dirty-input + cross-platform hardening. 0.3: malformed-YAML survival + reference.
 OKF_STANDARD_VERSION = "0.1"
