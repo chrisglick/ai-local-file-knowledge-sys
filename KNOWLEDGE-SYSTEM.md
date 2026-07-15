@@ -30,7 +30,10 @@ project-root/
     │   └── TYPE_slug.md…  # atomic concept notes (folded by topic once earned)
     ├── plans/      # feature specs / build-period design (frozen when built)
     ├── session/    # dated journal (append-only, frozen); or sessions/
-    ├── scripts/okf # 10-line shim → global engine/viewer
+    │   └── raw/           # archived transcripts — the citation target for a decision's "why"
+    │       ├── <id>.md    #   distilled prose (committed; ~4% of raw)
+    │       └── <id>.jsonl #   untouched transcript (GITIGNORED — holds tool output)
+    ├── scripts/okf # 10-line shim → global engine/viewer/distiller
     └── okf-memory-graph.html   # generated viewer output (gitignored)
 ```
 
@@ -46,6 +49,7 @@ project-root/
 | Current status (project + plan tables) | `STATUS.md` (root) | updated / session |
 | Timeless facts (gotcha/schema/decision/pattern/runbook) | `ai/memory/` | edited in place |
 | Dated narrative (what happened, why, pick-up state) | `ai/session/` | frozen |
+| Verbatim conversation (what was *actually* said) | `ai/session/raw/<id>.md` | immutable; the source |
 | Build specs | `ai/plans/` | frozen when built |
 
 Rule: still true in 6 months → `ai/memory/`; "what we did on a date" → `ai/session/`. Denormalize the timeless (cache enums/IDs/table names), query the live (never cache counts / deploys).
@@ -100,6 +104,40 @@ Distilled fact. Inline link related notes: [refresh flow](runbook_refresh-token.
 - Decision body: `Decision (NAME, DATE)` / `Why` / `Supersedes`.
 - Flat until ~20–25 notes, then fold by topic/domain (not by type; type stays in prefix).
 
+## Conversation provenance (the `why` has a source too)
+
+`source: src/auth/login.ts:42` works when the fact lives in code. A **decision** doesn't: its *why*
+was argued in a conversation. Cite that as prose (`session 2026-06-19`) and nobody can ever open it
+— the note becomes unfalsifiable, which is the one thing this bundle exists to prevent. Non-code
+work (analysis, dashboards, ops) is *mostly* decisions, so this is the common case, not the corner.
+
+Two failures compound:
+1. **Prose sources rot silently** — no path, no check, no way to know the note drifted from reality.
+2. **The source disappears.** Claude Code deletes session files older than `cleanupPeriodDays`
+   (**default 30**) at startup. The citation dangles on day 31 — exactly when you'd want it.
+
+So `/end-session` Phase 0 archives the session into the repo, and `--check` treats a prose or
+unresolvable `source:` as a warning. A distilled transcript is to a decision what a commit hash is
+to code: the note may be wrong, but you can always walk back to what was said.
+
+**What gets archived, and why the split is a safety boundary:**
+
+| File | Contents | Git | Size |
+|---|---|---|---|
+| `<id>.md` | human + assistant prose | **committed** — the citation target | ~4% of raw |
+| `<id>.jsonl` | untouched transcript | **gitignored** — tool output | 100% |
+
+Tool results (`env` dumps, file reads, command stdout) are ~31% of a raw transcript's bytes and
+carry essentially all of its secret exposure; the conversation itself is ~3%. The distiller drops
+tool results, tool calls, and reasoning **by block type** — a structural exclusion, deterministic in
+a way secret-scanning is not. (Load-bearing subtlety: a `tool_result` block carries
+`role: "user"`. Filtering turns by role instead of block type archives every command's output.)
+
+A known-shape secret scan (`ghp_`, `sk-ant-`, `AKIA`, JWTs, PEM blocks…) runs over the distilled
+prose and redacts hits, because people paste keys into chat. It is **defense in depth, not a
+clearance**: passwords, connection strings, PII, and internal hostnames have no detectable shape, so
+`0 hits` means "no issuer-formatted token," never "safe." Read the file before committing it.
+
 ## Engine: `okf_normalize.py` (v0.7, OKF v0.1)
 
 One file, `pyyaml`-only. Lives once in the `init-ai-workspace` skill dir; hooks in `~/.claude/hooks/`; project carries only the 10-line `ai/scripts/okf` shim. Nothing vendored → one engine to upgrade.
@@ -113,6 +151,7 @@ One file, `pyyaml`-only. Lives once in the `init-ai-workspace` skill dir; hooks 
 | `--review` | print `status: unverified` promotion queue |
 | `--suggest-links` | surface note pairs not yet linked |
 | `--render` | regenerate graph HTML |
+| `--distill` | archive this session's transcript as a citable record (`distill_transcript.py`) |
 
 Indexes + graph are generated, never hand-written (`--reindex`; prose above `<!-- okf-index:auto -->` preserved). Viewer vendored from Google's `knowledge-catalog` enrichment-agent, Apache-2.0.
 
@@ -143,6 +182,14 @@ Indexes + graph are generated, never hand-written (`--reindex`; prose above `<!-
 - Graph edgeless unless notes inline-linked; `--suggest-links` is a hint.
 - Foldering heuristic needs human correction.
 - Decay only warns (90d), no re-verify.
+- Transcript archiving is per-session and manual: sessions before adoption are unrecoverable once
+  `cleanupPeriodDays` (default 30) has pruned them, and raising the setting protects only what's left.
+- The distilled record holds no tool output by design — "we chose X because the benchmark showed Y"
+  keeps the claim, not Y. The local raw `.jsonl` is the fallback, and it doesn't survive a clone.
+- Secret scanning covers issuer-formatted tokens only. Passwords, connection strings, PII, and
+  internal hostnames are undetectable — committing a distilled transcript is a human judgement call.
+- Only Claude Code writes a transcript we can archive. On claude.ai / Cowork the source is a chat
+  that no `source:` can durably resolve.
 - Tooling global, not vendored: clone lacks engine unless skill installed (shim exits 127); `--gate` hook global.
 - OKF v0.1; value-carrying extensions are local; other OKF tools ignore them.
 - Cross-platform friction (Windows backslash paths, case-insensitive FS rename).

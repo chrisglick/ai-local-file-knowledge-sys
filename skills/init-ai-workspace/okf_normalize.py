@@ -235,8 +235,17 @@ def check_provenance(fm: dict, body: str, path: Path, repo_root: Path, *, today:
     if "**Verify:**" not in body and "**Verify**" not in body:
         warns.append("missing `**Verify:**` line (the re-check that fights rot)")
     src = str(fm.get("source") or "")
-    # Only treat clearly file-like sources as paths; skip URLs and "session ..." prose.
-    if src and "://" not in src and not src.lower().startswith(("session", "plan")):
+    # A conversation-sourced note (the "why" of a decision lives in chat, not in code) must cite
+    # something that still resolves. Prose like "session 2026-06-19" names a source nobody can
+    # open, so the claim rots silently -- the exact failure this bundle exists to prevent.
+    if src and src.lower().startswith(("session", "plan")) and not _SOURCE_PATH.search(src):
+        warns.append(
+            "`source` names a session/plan in prose, not a resolvable path -- cite the archived "
+            "transcript (e.g. ai/session/raw/<session-id>.md) so the claim stays checkable"
+        )
+    # Path-check every file-like source. URLs are skipped: reachability needs the network, and a
+    # chat URL that outlives its project reshuffle can't be proven from here either way.
+    if src and "://" not in src:
         for m in _SOURCE_PATH.finditer(src):
             cand = m.group(1).replace("\\", "/")
             if "/" in cand and not (repo_root / cand).exists() and not Path(cand).is_absolute():

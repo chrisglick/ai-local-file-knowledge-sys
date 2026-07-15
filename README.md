@@ -74,8 +74,41 @@ Then `/end-session` at each session close. If the project has years of undistill
 | `--review` | print the `status: unverified` promotion queue |
 | `--suggest-links` | surface note pairs not yet linked |
 | `--render` | regenerate the graph HTML |
+| `--distill` | archive this session's transcript as a citable record |
 
 Full reference: [`okf_normalize.README.md`](skills/init-ai-workspace/okf_normalize.README.md).
+
+### Citing a conversation
+
+`source: src/auth/login.ts:42` works when a fact lives in code. A **decision**'s *why* was argued in
+a chat — cite that as `session 2026-06-19` and nobody can open it, so the note can never be
+re-checked. Worse, Claude Code deletes session files older than `cleanupPeriodDays`
+(**[default 30](https://code.claude.com/docs/en/settings)**), so even a chat link dangles right when
+you need it.
+
+`/end-session` archives each session into the repo, and `--check` warns on any `source:` that can't
+be opened:
+
+```
+decision_prose-source.md
+  ? `source` names a session/plan in prose, not a resolvable path -- cite the archived transcript
+decision_pruned.md
+  ? `source` path not found: ai/session/raw/deadbeef-....md
+```
+
+Two files land per session, and **the split is a safety boundary, not tidiness**:
+
+| File | Contents | Git |
+|---|---|---|
+| `<id>.md` | human + assistant prose (~4% of raw) | **committed** — the citation target |
+| `<id>.jsonl` | untouched transcript | **gitignored** — holds tool output |
+
+Tool results (`env` dumps, file reads, stdout) are ~31% of a raw transcript and carry effectively
+all of its secret exposure; the conversation is ~3%. The distiller drops tool results, tool calls,
+and reasoning **by block type** — a structural exclusion, deterministic in a way secret-scanning
+isn't. A known-shape scan (`ghp_`, `sk-ant-`, `AKIA`, JWTs, PEM blocks…) then redacts what it can,
+but **`0 hits` is not a clearance** — passwords, PII, and internal hostnames have no detectable
+shape. Read the file before committing it.
 
 The shim resolves the engine at `~/.claude/skills/init-ai-workspace/`. Override with
 `OKF_SKILL_DIR` if you install elsewhere. A clone without the skill installed gets a shim that
@@ -90,6 +123,11 @@ the ones to know before adopting:
 
 - **Capture is not automatic.** It's operator-dependent — you have to run `/end-session`.
 - **Nothing forces review.** The promotion queue is unbounded; unvouched facts accumulate.
+- **Archiving starts the day you adopt it.** Sessions already pruned by `cleanupPeriodDays` are
+  gone; raising the setting protects only what's left. Run `/init-ai-workspace` early.
+- **Secret scanning is issuer-shaped only.** Committing a distilled transcript stays a human call.
+- **Only Claude Code writes an archivable transcript.** On claude.ai / Cowork the source is a chat
+  no `source:` can durably resolve.
 - **The anti-hallucination gate is prompt-enforced, not guaranteed.** The codebase adapter in
   `backfill-memory` is the highest-risk surface.
 - **No Stop hook ships here.** `KNOWLEDGE-SYSTEM.md` and the shim's `--gate` verb describe a

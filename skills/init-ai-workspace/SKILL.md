@@ -47,6 +47,19 @@ Check and report:
   but is an older "folder map" (no index-of-indexes / no situation read-order table), offer to upgrade it.
 - Session journal dir — does `ai/session/` (singular) or `ai/sessions/` (plural) already exist?
   Note which spelling is in use; you will **reuse it**, not create the other variant.
+- **Transcript retention (report this loudly — it has a deadline).** Read `cleanupPeriodDays` from
+  `~/.claude/settings.json`. Claude Code deletes session files older than this **at startup**, and
+  the **default is 30 days** when the key is absent. That is the shelf life of every "why" this
+  project hasn't archived yet:
+  ```bash
+  grep -n 'cleanupPeriodDays' ~/.claude/settings.json || echo "unset -> default 30 days"
+  ls -1 ~/.claude/projects/*/*.jsonl 2>/dev/null | wc -l   # transcripts still on disk
+  ```
+  If it's unset or low, tell the user plainly: *transcripts older than N days are already gone, and
+  `/backfill-memory` cannot mine what no longer exists.* Offer to raise it
+  (`"cleanupPeriodDays": 3650`) — that's a one-line edit to their settings, and it only protects
+  sessions **from now on**; it cannot recover pruned ones. `/end-session` Phase 0 archives each
+  session into the repo, which is what makes the setting stop mattering going forward.
 Summarize what will be created/migrated/skipped, then proceed.
 
 ---
@@ -73,12 +86,22 @@ Skip entirely if there's already an `ai/` and no `.ai/`. If `.ai/` exists:
 ## Phase 2 — Scaffold the `ai/` structure (create only what's missing)
 Create dirs if absent: `ai/`, `ai/memory/`, `ai/plans/`, `ai/scripts/`, and the session journal dir.
 
-**Tooling is global, not vendored.** The engine (`okf_normalize.py`), the graph viewer (`okf-viewer/`),
-and the Stop hook live ONCE in this skill dir / `~/.claude/hooks/` — never copy them into a project.
-The only per-project "script" is a 10-line pointer: copy this skill's **`okf.shim.sh`** to
-`ai/scripts/okf` (create only if absent) and `chmod +x` it. It resolves the global engine/viewer and
-defaults the bundle to `ai/memory`, so commands are just `ai/scripts/okf --check` / `--reindex` /
-`--render`. Add `ai/okf-memory-graph.html` (the viewer's regenerable output) to `.gitignore`.
+**Tooling is global, not vendored.** The engine (`okf_normalize.py`), the transcript distiller
+(`distill_transcript.py`), and the graph viewer (`okf-viewer/`) live ONCE in this skill dir — never
+copy them into a project. The only per-project "script" is a 10-line pointer: copy this skill's
+**`okf.shim.sh`** to `ai/scripts/okf` (create only if absent) and `chmod +x` it. It resolves the
+global tools and defaults the bundle to `ai/memory`, so commands are just `ai/scripts/okf --check`
+/ `--reindex` / `--render` / `--distill`.
+
+Also create `ai/{{SESSION_DIR}}/raw/` — where `/end-session` archives each session (distilled `.md`
+committed, raw `.jsonl` local-only). Add these `.gitignore` rules:
+```gitignore
+ai/okf-memory-graph.html        # regenerable viewer output
+ai/{{SESSION_DIR}}/raw/*.jsonl  # raw transcripts: hold tool output (env dumps, file reads, stdout)
+```
+The `.jsonl` rule is a safety boundary, not tidiness — **the distilled `.md` beside it is the
+committable record.** Never invert this. If a project's conversations are themselves confidential,
+gitignore `ai/{{SESSION_DIR}}/raw/*.md` too and note that citations then resolve on this machine only.
 
 **Session dir spelling — reuse, don't duplicate:** both `ai/session/` (singular, canonical
 default) and `ai/sessions/` (plural) are valid. If either already exists, use that one and

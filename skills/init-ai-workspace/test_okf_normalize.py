@@ -204,9 +204,39 @@ def test_check_provenance_flags_missing_source_and_verify_and_stale(tmp_path):
     assert "source" in joined and "Verify" in joined and "stale" in joined
 
 
+def _archived_transcript(tmp_path, name="c6d186e7.jsonl"):
+    raw = tmp_path / "ai" / "session" / "raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / name).write_text('{"type":"user"}\n', encoding="utf-8")
+    return f"ai/session/raw/{name}"
+
+
 def test_check_provenance_clean_when_ok(tmp_path):
-    warns = okf.check_provenance({"source": "session 2026-06-11", "status": "verified"},
+    src = _archived_transcript(tmp_path)
+    warns = okf.check_provenance({"source": src, "status": "verified"},
                                  "**Verify:** run it", tmp_path / "x.md", tmp_path, today=TODAY)
+    assert warns == []
+
+
+def test_check_provenance_flags_prose_session_source(tmp_path):
+    """A decision's 'why' comes from a chat. 'session 2026-06-11' names nothing anyone can open,
+    so the claim rots quietly -- cite the archived transcript instead."""
+    warns = okf.check_provenance({"source": "session 2026-06-11"},
+                                 "**Verify:** run it", tmp_path / "x.md", tmp_path, today=TODAY)
+    assert any("not a resolvable path" in w for w in warns)
+
+
+def test_check_provenance_flags_transcript_that_vanished(tmp_path):
+    """The citation must fail loudly once the transcript is gone (e.g. cleanupPeriodDays pruned it)."""
+    warns = okf.check_provenance({"source": "ai/session/raw/pruned.jsonl"},
+                                 "**Verify:** run it", tmp_path / "x.md", tmp_path, today=TODAY)
+    assert any("path not found" in w for w in warns)
+
+
+def test_check_provenance_still_skips_urls(tmp_path):
+    """A chat URL can't be proven from here; don't cry wolf on it."""
+    warns = okf.check_provenance({"source": "https://claude.ai/chat/abc123"},
+                                 "**Verify:** open it", tmp_path / "x.md", tmp_path, today=TODAY)
     assert warns == []
 
 

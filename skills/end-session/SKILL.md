@@ -33,6 +33,46 @@ Work through every phase. Do not skip. Reconstruct from evidence — **do not tr
 
 ---
 
+## Phase 0 — Archive the transcript (do this FIRST; it's the citation target)
+Everything below distills this session into prose. Prose drifts from what was actually said, and
+**you cannot cite yourself as the source.** Archive the conversation first so every later phase has
+something real to point at.
+
+There is a deadline you don't control: Claude Code deletes session files older than
+`cleanupPeriodDays` (**default 30**) at startup. A note that cites "the chat where we decided X"
+dangles on day 31 — right when you finally need it.
+
+```bash
+ai/scripts/okf --distill --out ai/<session-dir>/raw/$CLAUDE_CODE_SESSION_ID.md \
+                         --raw ai/<session-dir>/raw/
+```
+(No shim? `python <init-ai-workspace-skill-dir>/distill_transcript.py --out ... --raw ...`)
+
+It writes two things, and the split is deliberate:
+- **`<id>.md` — human + assistant prose. Commit this.** Typically ~4% of the raw size. Tool
+  results, tool calls, and reasoning are dropped **by block type** — a structural exclusion, not a
+  secret-scan. Tool output is where keys actually land (an `env` dump, a config read, a command
+  that prints a token); dropping the whole category is deterministic in a way pattern-matching
+  never is.
+- **`<id>.jsonl` — the untouched transcript. Gitignore it** (`/init-ai-workspace` adds the rule).
+  It holds the tool output, so it never leaves the machine — but it survives `cleanupPeriodDays`,
+  which is the point. It's your local fallback when the distilled record isn't enough evidence.
+
+Then:
+- **Read the secret-scan line.** It reports issuer-formatted tokens (`ghp_`, `sk-ant-`, `AKIA`, …)
+  and redacts them. It says `0 hits` for passwords, connection strings, PII, internal hostnames,
+  and proprietary data — **it cannot see those**. `0 hits` is not a clearance. Skim the file before
+  committing it; if it holds something client-confidential, gitignore the `.md` too and say so in
+  the session note (the citation then resolves only on this machine — a real downgrade, worth stating).
+- **Cite it from every note you write below.** A decision's `source:` is
+  `ai/<session-dir>/raw/<id>.md`, not `session 2026-07-15`. `--check` warns on prose sources
+  precisely because they can't be opened.
+- **Re-run this at the very end** if the session continued — the copy is a snapshot and `cp` overwrites.
+
+If the transcript is already gone (older than `cleanupPeriodDays`, or a non-Claude-Code surface),
+say so plainly in the session note rather than inventing a citation. An honest "source unavailable"
+beats a `source:` nobody can open.
+
 ## Phase 1 — Reconstruct what actually happened (evidence, not memory)
 - Run `git status --short` and `git diff --stat` (and `git log` since session start) to see every file touched.
 - List artifacts created/changed: scripts, prompts, docs, plans, notes, data outputs, dashboards, reports.
@@ -113,6 +153,14 @@ End with a tight report:
 - A pretty summary with no **pick-up state** or **next action**.
 - Documenting *what* without *how to run it* (no command sequence / auth).
 - Assuming the work is safe without checking git (untracked ≠ saved).
+- **Citing `session 2026-07-15` (or "the chat where we decided X") as a `source:`** — nobody can
+  open that, so the claim can never be re-checked and rots silently. Cite the archived transcript.
+- **Committing the raw `.jsonl`** because it "looks like just a log." It carries every tool result:
+  env dumps, file contents, command stdout. Distilled `.md` is the committable artifact.
+- **Reading `secret scan: 0 hits` as "safe to commit."** It means no *issuer-formatted* token was
+  found. Passwords, PII, and internal hostnames are invisible to it.
+- Recording a decision's outcome while the reasoning lives only in the assistant's turns you didn't
+  archive — the *why* is what gets re-litigated, and it's rarely in the human's messages.
 - Writing new memory but leaving contradicted old memory in place.
 - Reporting results without flagging which numbers aren't trustworthy.
 - Skipping the human questions and guessing the next priority.

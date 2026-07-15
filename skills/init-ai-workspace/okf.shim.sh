@@ -10,12 +10,14 @@
 #   ai/scripts/okf --review       # list status: unverified notes (the backfill promotion queue)
 #   ai/scripts/okf --suggest-links # surface note pairs sharing terms but not yet linked (a hint)
 #   ai/scripts/okf --render [OUT] # render the graph HTML (default ai/okf-memory-graph.html)
+#   ai/scripts/okf --distill ...  # distill this session's transcript into a citable md record
 #   ai/scripts/okf --version
 # Pass an explicit bundle dir as the first arg to override the default (ai/memory).
 set -euo pipefail
 SKILL="${OKF_SKILL_DIR:-$HOME/.claude/skills/init-ai-workspace}"
 ENGINE="${OKF_NORMALIZE:-$SKILL/okf_normalize.py}"
 VIEWER="$SKILL/okf-viewer/render.py"
+DISTILL="$SKILL/distill_transcript.py"
 PY="$(command -v python3 || command -v python || true)"   # macOS/Linux often only have python3
 BUNDLE="ai/memory"
 if [ "${1:-}" != "" ] && [ -d "${1:-}" ]; then BUNDLE="$1"; shift; fi
@@ -28,5 +30,9 @@ fi
 if [ "${1:-}" = "--render" ]; then
   shift
   exec "$PY" "$VIEWER" "$BUNDLE" "${1:-ai/okf-memory-graph.html}" "OKF memory"
+fi
+if [ "${1:-}" = "--distill" ]; then
+  shift
+  exec "$PY" "$DISTILL" "$@"
 fi
 exec "$PY" "$ENGINE" "$BUNDLE" "$@"
