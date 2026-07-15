@@ -120,12 +120,21 @@ So `/end-session` Phase 0 archives the session into the repo, and `--check` trea
 unresolvable `source:` as a warning. A distilled transcript is to a decision what a commit hash is
 to code: the note may be wrong, but you can always walk back to what was said.
 
-**What gets archived, and why the split is a safety boundary:**
+**What gets archived, and how far it travels.** `ai/okf.conf` sets `archive = off | local | shared`;
+absent or garbled falls back to `local`, because a typo must never upgrade a project to publishing
+its conversations. `local` is the default — it beats `cleanupPeriodDays` (the actual problem) while
+nothing leaves the machine. `shared` (commit the distilled record so citations resolve on a clone)
+is an informed choice for private repos, never for public ones.
+
+The config is **enforced, not advisory**: `distill_transcript.py` refuses to write an un-gitignored
+transcript under `local`, and refuses the raw `.jsonl` in *every* mode. `git check-ignore` answers
+before anything is written, so a transcript that could be committed is never created. This matters
+because the system's standing weakness is prompt-enforced discipline — this control is code + git.
 
 | File | Contents | Git | Size |
 |---|---|---|---|
-| `<id>.md` | human + assistant prose | **committed** — the citation target | ~4% of raw |
-| `<id>.jsonl` | untouched transcript | **gitignored** — tool output | 100% |
+| `<id>.md` | human + assistant prose | committed under `shared`; ignored under `local` | ~4% of raw |
+| `<id>.jsonl` | untouched transcript | **never committed, in any mode** — tool output | 100% |
 
 Tool results (`env` dumps, file reads, command stdout) are ~31% of a raw transcript's bytes and
 carry essentially all of its secret exposure; the conversation itself is ~3%. The distiller drops

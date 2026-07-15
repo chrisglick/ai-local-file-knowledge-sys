@@ -1,0 +1,51 @@
+# Knowledge-system settings for this project.
+# Written by /init-ai-workspace. Safe to edit by hand. Commit this file.
+
+# ---------------------------------------------------------------------------
+# archive — what /end-session keeps of each conversation.
+#
+# When you and Claude decide something, the reason lives in the conversation.
+# A note saying "we chose Postgres" is only trustworthy if you can go back and
+# read WHY. So /end-session can save the conversation into this repo and have
+# your notes point at it.
+#
+# The catch: a conversation contains whatever was said in it. Client names,
+# unreleased plans, personal details, a password someone pasted in. Saving it
+# is useful. PUBLISHING it usually isn't. These modes are that choice.
+#
+#   local   Save the conversation to ai/session/raw/, never commit it.
+#           It stays on this computer. Other people who clone this repo won't
+#           get it, so your notes' sources won't open for them.
+#           <-- DEFAULT. Right for almost everyone, and always right if unsure.
+#
+#   shared  Save it AND commit it, so teammates (and anyone who can read this
+#           repo) get it too. Only for PRIVATE repos, and only if you accept
+#           that everything said in the session ships with the code.
+#           NEVER use this on a public repo.
+#
+#   off     Don't save conversations at all. Safest. The cost: a decision's
+#           "why" has no source anyone can open, so `okf --check` will flag
+#           those notes. Choose this if the work is confidential.
+#
+# Not sure? Leave it as `local`. You can change it any time; it only affects
+# sessions from that point on.
+# ---------------------------------------------------------------------------
+archive = local
+
+# ---------------------------------------------------------------------------
+# Two things this setting does NOT do, so you aren't surprised:
+#
+# 1. The raw .jsonl transcript is NEVER committed, in any mode. It contains the
+#    output of every command Claude ran — which can include environment
+#    variables, file contents, and API keys printed by ordinary tools. The
+#    tooling refuses to write it anywhere that isn't gitignored.
+#
+# 2. The secret scan is not a safety net. It finds keys with a recognisable
+#    shape (ghp_..., sk-ant-..., AKIA...). It CANNOT find passwords, database
+#    connection strings, personal data, or internal hostnames — those look like
+#    ordinary text. "0 hits" means "nothing obvious", never "safe to publish".
+#
+# If a secret ever does get committed: deleting the file is not enough. Git
+# keeps it in history, and anyone who cloned or forked already has it. Rotate
+# the credential — that is the only real fix.
+# ---------------------------------------------------------------------------

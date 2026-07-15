@@ -121,6 +121,49 @@ def test_find_transcript_globs_by_uuid_not_cwd_mangling(tmp_path):
     assert dt.find_transcript("nope", tmp_path) is None
 
 
+# ---- config: fails safe, because the user is not a security expert ----
+
+def _conf(tmp_path, body):
+    (tmp_path / "ai").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "ai" / "okf.conf").write_text(body, encoding="utf-8")
+    return tmp_path / "ai" / "okf.conf"
+
+
+def test_missing_config_defaults_to_local_not_shared():
+    """No config must never mean 'publish'. The safe end is the default end."""
+    assert dt.read_mode(None) == "local"
+    assert dt.DEFAULT_MODE == "local"
+
+
+def test_reads_each_mode(tmp_path):
+    for m in ("off", "local", "shared"):
+        assert dt.read_mode(_conf(tmp_path, f"archive = {m}\n")) == m
+
+
+def test_config_ignores_comments_and_is_case_insensitive(tmp_path):
+    cfg = _conf(tmp_path, "# archive = shared\narchive = LOCAL  # trailing note\n")
+    assert dt.read_mode(cfg) == "local"
+
+
+def test_garbled_value_falls_back_to_safe_mode(tmp_path):
+    """A typo must not silently upgrade a project to publishing its conversations."""
+    assert dt.read_mode(_conf(tmp_path, "archive = shred\n")) == "local"
+    assert dt.read_mode(_conf(tmp_path, "archive =\n")) == "local"
+    assert dt.read_mode(_conf(tmp_path, "nonsense\n")) == "local"
+
+
+def test_unreadable_config_falls_back_to_safe_mode(tmp_path):
+    assert dt.read_mode(tmp_path / "ai" / "does-not-exist.conf") == "local"
+
+
+def test_find_config_walks_up_from_a_subdirectory(tmp_path):
+    cfg = _conf(tmp_path, "archive = off\n")
+    deep = tmp_path / "src" / "nested" / "deep"
+    deep.mkdir(parents=True)
+    assert dt.find_config(deep) == cfg
+    assert dt.read_mode(dt.find_config(deep)) == "off"
+
+
 def test_render_declares_what_was_left_out(tmp_path):
     out = dt.render([{"role": "user", "text": "hi", "ts": "2026-07-15T11:57:00Z"}],
                     "abc-123", tmp_path / "abc-123.jsonl", "2026-07-15")

@@ -93,15 +93,18 @@ copy them into a project. The only per-project "script" is a 10-line pointer: co
 global tools and defaults the bundle to `ai/memory`, so commands are just `ai/scripts/okf --check`
 / `--reindex` / `--render` / `--distill`.
 
-Also create `ai/{{SESSION_DIR}}/raw/` — where `/end-session` archives each session (distilled `.md`
-committed, raw `.jsonl` local-only). Add these `.gitignore` rules:
+Also create `ai/{{SESSION_DIR}}/raw/` — where `/end-session` archives each session — and write
+`ai/okf.conf` from this skill's **`okf.conf.template`** (create only if absent; it records the
+`archive` mode chosen in Phase 2.5 below).
+
+**`.gitignore` — this is a safety boundary, not tidiness.** Write the rules that match the mode:
 ```gitignore
-ai/okf-memory-graph.html        # regenerable viewer output
-ai/{{SESSION_DIR}}/raw/*.jsonl  # raw transcripts: hold tool output (env dumps, file reads, stdout)
+ai/okf-memory-graph.html          # regenerable viewer output
+ai/{{SESSION_DIR}}/raw/*.jsonl    # ALWAYS: raw transcripts hold tool output (env dumps, file reads, stdout)
+ai/{{SESSION_DIR}}/raw/*.md       # if archive = local  (the conversation stays on this machine)
 ```
-The `.jsonl` rule is a safety boundary, not tidiness — **the distilled `.md` beside it is the
-committable record.** Never invert this. If a project's conversations are themselves confidential,
-gitignore `ai/{{SESSION_DIR}}/raw/*.md` too and note that citations then resolve on this machine only.
+The `*.jsonl` rule is unconditional in every mode — `distill_transcript.py` refuses to write there
+if it isn't ignored. Never invert it: **the raw transcript is not the committable artifact.**
 
 **Session dir spelling — reuse, don't duplicate:** both `ai/session/` (singular, canonical
 default) and `ai/sessions/` (plural) are valid. If either already exists, use that one and
@@ -157,6 +160,46 @@ absent (if it exists, leave it — `/end-session` owns this file): copy this ski
 `RESUME.template.md` and substitute `{{PROJECT}}` / `{{STATUS}}`. This keeps the index of
 indexes' `../RESUME.md` link from dangling on a fresh workspace; `/end-session` Phase 9
 overwrites the stub with real active-thread state.
+
+---
+
+## Phase 2.5 — Decide what leaves this machine (ASK; never assume)
+`/end-session` can save each conversation into the repo so a decision's *why* has a source you can
+open. That is genuinely useful and it is also the one part of this system that can **publish
+something you didn't mean to publish**. Settle it now, at scaffold time, not at 2am mid-session.
+
+**Detect first — don't ask a question the repo already answers:**
+```bash
+git remote -v                                        # any remote at all?
+gh repo view --json visibility -q .visibility 2>/dev/null   # PUBLIC | PRIVATE | (blank = unknown)
+```
+
+**If the repo is PUBLIC** (or is heading for a public host), say this plainly and do not soften it:
+> Anything committed here is public permanently. Deleting a file later does not help — git keeps it
+> in history, and forks, clones, and caches keep it after that. A leaked credential must be
+> **rotated**, not deleted.
+
+For a public repo, default to **`archive = local`** and recommend gitignoring the knowledge that
+accumulates operational detail. `/end-session` writes runbooks describing *where* credentials live
+and how to refresh them; that is useful to you and a map for a stranger. Offer, in order:
+1. **`ai/{{SESSION_DIR}}/` ignored entirely** (journal + transcripts stay local; `memory/` and
+   `plans/` commit). Good default for a public repo: the curated notes are the shareable part.
+2. **All of `ai/` ignored** — the knowledge base is local-only. Choose this when nobody will review
+   each file before pushing. It forfeits "survives a fresh clone" — say so; that trade is correct
+   here, because an unreviewed publish is worse than a lost note.
+3. **Commit it, reviewed.** Only if the user will actually read each file before every push.
+
+**If PRIVATE**, `archive = local` is still the default; `shared` is a fine, informed choice for a
+team that wants citations to resolve on a clone. **If unknown** (no remote, or no `gh`), use
+`local` — a repo with no remote today gets one tomorrow.
+
+Write the answer to `ai/okf.conf` (`okf.conf.template`) and make `.gitignore` match. The config is
+not decoration: `distill_transcript.py` reads it and **refuses to write an un-ignored transcript in
+`local` mode**, so the choice is enforced by git rather than by anyone remembering it.
+
+State the outcome in one line the user can check, e.g.
+*"archive = local — conversations are saved to ai/session/raw/ on this machine and are gitignored;
+nothing from a chat will be pushed."*
 
 ---
 

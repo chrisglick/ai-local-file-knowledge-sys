@@ -42,28 +42,45 @@ There is a deadline you don't control: Claude Code deletes session files older t
 `cleanupPeriodDays` (**default 30**) at startup. A note that cites "the chat where we decided X"
 dangles on day 31 — right when you finally need it.
 
+**This step saves the conversation to disk. Know what that means before running it:** the archive
+contains what was actually said this session — client names, unreleased plans, personal details, a
+credential someone pasted into chat. `ai/okf.conf` decides how far it travels, and the tooling
+enforces that choice rather than trusting anyone to remember it:
+
+| `archive =` | What happens | For |
+|---|---|---|
+| `local` *(default)* | Saved to `ai/<session-dir>/raw/`, **gitignored**. Never pushed. | Almost everyone |
+| `shared` | Saved **and committed** — ships to anyone who can read the repo. | Private repos, informed choice |
+| `off` | Not saved. Decisions then have no citable source. | Confidential work |
+
+No `ai/okf.conf`? It defaults to `local` — the safe end. **If this repo is public, do not use
+`shared`.** Public means permanent: deleting a file later doesn't help, because git keeps history
+and forks keep copies. A leaked credential must be **rotated**, not deleted.
+
 ```bash
 ai/scripts/okf --distill --out ai/<session-dir>/raw/$CLAUDE_CODE_SESSION_ID.md \
                          --raw ai/<session-dir>/raw/
 ```
 (No shim? `python <init-ai-workspace-skill-dir>/distill_transcript.py --out ... --raw ...`)
 
-It writes two things, and the split is deliberate:
-- **`<id>.md` — human + assistant prose. Commit this.** Typically ~4% of the raw size. Tool
-  results, tool calls, and reasoning are dropped **by block type** — a structural exclusion, not a
-  secret-scan. Tool output is where keys actually land (an `env` dump, a config read, a command
-  that prints a token); dropping the whole category is deterministic in a way pattern-matching
-  never is.
-- **`<id>.jsonl` — the untouched transcript. Gitignore it** (`/init-ai-workspace` adds the rule).
-  It holds the tool output, so it never leaves the machine — but it survives `cleanupPeriodDays`,
-  which is the point. It's your local fallback when the distilled record isn't enough evidence.
+It reads `ai/okf.conf` itself and **refuses to write an un-gitignored transcript in `local` mode** —
+so a conversation can't be committed by accident. If it refuses, don't work around it by editing
+paths; fix `.gitignore` (re-run `/init-ai-workspace`) or change the mode deliberately.
+
+Two files, and the split is a safety boundary:
+- **`<id>.md` — human + assistant prose.** ~4% of the raw size. Tool results, tool calls, and
+  reasoning are dropped **by block type** — a structural exclusion, not a secret-scan. Tool output
+  is where keys actually land (an `env` dump, a config read, a command that prints a token);
+  dropping the whole category is deterministic in a way pattern-matching never is.
+- **`<id>.jsonl` — the untouched transcript. Never committed, in any mode** — the tool refuses if
+  the path isn't ignored. It survives `cleanupPeriodDays`, which is the point: it's your local
+  fallback when the distilled record isn't enough evidence.
 
 Then:
-- **Read the secret-scan line.** It reports issuer-formatted tokens (`ghp_`, `sk-ant-`, `AKIA`, …)
-  and redacts them. It says `0 hits` for passwords, connection strings, PII, internal hostnames,
-  and proprietary data — **it cannot see those**. `0 hits` is not a clearance. Skim the file before
-  committing it; if it holds something client-confidential, gitignore the `.md` too and say so in
-  the session note (the citation then resolves only on this machine — a real downgrade, worth stating).
+- **Read the secret-scan line, and read what it admits it can't do.** It finds issuer-formatted
+  tokens (`ghp_`, `sk-ant-`, `AKIA`, …) and redacts them. It is blind to passwords, connection
+  strings, PII, internal hostnames, and proprietary data — those look like ordinary prose.
+  **`0 hits` means "nothing obvious", never "safe to publish".** Under `shared`, skim the file.
 - **Cite it from every note you write below.** A decision's `source:` is
   `ai/<session-dir>/raw/<id>.md`, not `session 2026-07-15`. `--check` warns on prose sources
   precisely because they can't be opened.
@@ -90,7 +107,11 @@ Write `notes/YYYY-MM-DD-<topic>.md` — or `ai/session/YYYY-MM-DD-<topic>.md` if
 ## Phase 3 — The 6-month cold-read test (the highest-value phase)
 Explicitly ask: *"If I reopened this with no memory, what would I be looking for, and what would I curse past-me for?"* Then make sure each exists:
 - **A runbook** — the exact command sequence to run/resume the work, in order.
-- **Auth & environment** — every key, cookie, env var, credential path, and how to refresh them. (These are almost always missing — they live in someone's head or buried in a script.)
+- **Auth & environment** — **where** each key/cookie/env var lives and **how to refresh it**, never
+  the value. Write `AWS creds: ~/.aws/credentials [default] — refresh with aws sso login`, never the
+  key itself. (These pointers are almost always missing — they live in someone's head or buried in a
+  script — which is why the temptation is to paste the real thing. Don't. A runbook is committed, and
+  a secret in git history survives deleting the file; it must then be rotated, not removed.)
 - **Artifact layout** — where inputs/outputs live and the naming conventions.
 - **Prerequisites** — what must exist/run first.
 - **Gotchas learned** — the bugs you root-caused, the non-obvious behaviors, the "don't do X."

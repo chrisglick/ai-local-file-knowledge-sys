@@ -40,11 +40,16 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from datetime import date
 from pathlib import Path
 
-TOOL_VERSION = "0.1"
+TOOL_VERSION = "0.2"
+
+CONFIG_NAME = "okf.conf"
+MODES = ("off", "local", "shared")
+DEFAULT_MODE = "local"  # safe by default: keep the conversation, but never publish it
 
 # Blocks we keep. Everything else -- tool_result, tool_use, thinking, images -- is dropped by type.
 KEPT_BLOCK_TYPES = {"text"}
@@ -79,6 +84,60 @@ SCAN_BLIND_SPOTS = (
     "unknown-shape secrets are NOT detectable here: passwords, connection strings, PII, "
     "internal hostnames, private URLs, proprietary data. Read the file before committing."
 )
+
+
+def find_config(start: Path | None = None) -> Path | None:
+    """Walk up from `start` looking for ai/okf.conf."""
+    d = (start or Path.cwd()).resolve()
+    for cand in [d, *d.parents]:
+        p = cand / "ai" / CONFIG_NAME
+        if p.is_file():
+            return p
+    return None
+
+
+def read_mode(cfg: Path | None) -> str:
+    """Read `archive = off|local|shared`. Absent/garbled config falls back to the SAFE mode.
+
+    Fails safe on purpose: a typo must never silently upgrade a project to publishing its
+    conversations. The cost of guessing wrong toward `local` is a citation that only resolves on
+    one machine. The cost of guessing wrong toward `shared` is a public transcript.
+    """
+    if not cfg or not cfg.is_file():
+        return DEFAULT_MODE
+    try:
+        text = cfg.read_text(encoding="utf-8")
+    except OSError:
+        return DEFAULT_MODE
+    for line in text.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if "=" not in line:
+            continue
+        k, v = (x.strip().lower() for x in line.split("=", 1))
+        if k == "archive":
+            return v if v in MODES else DEFAULT_MODE
+    return DEFAULT_MODE
+
+
+def is_gitignored(path: Path) -> bool | None:
+    """True/False, or None when git can't answer (no git, not a repo).
+
+    `git check-ignore` matches patterns, so this works on a path that doesn't exist yet -- the
+    check can run BEFORE anything is written.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "check-ignore", "-q", str(path)],
+            capture_output=True,
+            cwd=str(Path.cwd()),
+        )
+    except (FileNotFoundError, OSError):
+        return None
+    if r.returncode == 0:
+        return True
+    if r.returncode == 1:
+        return False
+    return None  # 128: not a git repo
 
 
 def find_transcript(session_id: str, projects_dir: Path | None = None) -> Path | None:
@@ -184,12 +243,43 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", help="write markdown here (default: stdout)")
     ap.add_argument("--raw", help="also copy the untouched .jsonl into this dir (gitignore it)")
     ap.add_argument("--strict", action="store_true", help="exit 1 on a secret hit instead of redacting")
+    ap.add_argument("--mode", choices=MODES, help="override ai/okf.conf `archive` for this run")
     ap.add_argument("--version", action="store_true")
     a = ap.parse_args(argv)
 
     if a.version:
         print(f"distill_transcript {TOOL_VERSION}")
         return 0
+
+    cfg = find_config()
+    mode = a.mode or read_mode(cfg)
+    where = cfg if cfg else "(no ai/okf.conf — using safe default)"
+
+    # `off` is a legitimate choice, not a failure: some projects must never keep a conversation.
+    if mode == "off":
+        print(f"distill: archive = off in {where} — not archiving this session.\n"
+              "  Notes written now cannot cite a transcript; record decisions in prose and expect\n"
+              "  `--check` to flag the missing source. Change with: archive = local")
+        return 0
+
+    # The guard that makes `local` mean local. Checked BEFORE writing: a transcript that was never
+    # written to a committable path cannot be committed by accident. This is enforced by git's own
+    # ignore rules rather than by remembering to be careful.
+    if a.out and mode == "local":
+        ig = is_gitignored(Path(a.out))
+        if ig is False:
+            print(f"distill: REFUSING to write {a.out}\n"
+                  f"  archive = local (from {where}) means the conversation stays on this machine,\n"
+                  f"  but that path is NOT gitignored — writing there risks committing it.\n"
+                  f"  Fix: add 'ai/session/raw/' to .gitignore (re-run /init-ai-workspace), or\n"
+                  f"  choose 'archive = shared' if you truly intend to commit conversations.",
+                  file=sys.stderr)
+            return 1
+        if ig is None:
+            print("distill: not a git repo (or git unavailable) — cannot verify the archive is "
+                  "ignored. Nothing will be committed from here, but check before you add a remote.",
+                  file=sys.stderr)
+
     if not a.session_id:
         print("distill: no session id (pass one, or run inside Claude Code where "
               "$CLAUDE_CODE_SESSION_ID is set).", file=sys.stderr)
@@ -229,16 +319,32 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(body)
 
     if a.raw:
-        rawdir = Path(a.raw)
-        rawdir.mkdir(parents=True, exist_ok=True)
-        dest = rawdir / src.name
+        dest = Path(a.raw) / src.name
+        # Unconditional, mode-independent: the raw transcript holds every tool result (env dumps,
+        # file contents, command stdout). There is no project for which committing it is correct,
+        # so refuse rather than warn — a warning scrolls past, a refusal doesn't.
+        if is_gitignored(dest) is False:
+            print(f"distill: REFUSING to copy the raw transcript to {dest} — that path is NOT\n"
+                  f"  gitignored. The .jsonl holds every tool result: environment dumps, file\n"
+                  f"  contents, command output. Add 'ai/session/raw/*.jsonl' to .gitignore first\n"
+                  f"  (re-run /init-ai-workspace). The distilled .md was still written.",
+                  file=sys.stderr)
+            return 1
+        dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
-        print(f"distill: copied raw transcript to {dest} — gitignore it; it holds tool output.")
+        print(f"distill: copied raw transcript to {dest} (gitignored; holds tool output).")
 
     for label, _ in hits:
         print(f"distill: REDACTED {label} from the distilled output.", file=sys.stderr)
     print(f"distill: secret scan found {len(hits)} known-shape hit(s); {SCAN_BLIND_SPOTS}",
           file=sys.stderr)
+
+    if mode == "shared" and a.out:
+        print("distill: archive = shared — this transcript is COMMITTABLE and will be pushed with\n"
+              "  the repo. Read it first. Anything said in the session is in it: client names,\n"
+              "  unreleased plans, personal details, a key someone pasted into chat. If this repo\n"
+              "  is public, that becomes public permanently — git history keeps it after deletion,\n"
+              "  and forks and caches keep it after that.", file=sys.stderr)
     return 0
 
 

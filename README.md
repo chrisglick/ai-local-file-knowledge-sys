@@ -55,6 +55,48 @@ cd ~/.claude/skills/init-ai-workspace && python -m pytest -q   # 51 passed
 session in prose will start failing. That's intended (those citations were never checkable), but
 it isn't silent: run `ai/scripts/okf --check` after updating. See [CHANGELOG.md](CHANGELOG.md).
 
+## Read this before you use it on a public repo
+
+This system writes what you and Claude did into your repo. That's the point — but two of those
+things can publish something you didn't mean to publish. You don't need to be a security person to
+stay safe here; you need to know these four facts.
+
+**1. `git push` is permanent.** Deleting a file later does not undo it. Git keeps every old version
+in its history, and anyone who cloned or forked already has a copy. If a password or API key ever
+lands in a public repo, deleting it does nothing — **you have to change the key itself** (rotate
+it). Assume anything pushed to a public repo is public forever.
+
+**2. Conversations get saved, and you choose how far they travel.** `/end-session` can save the
+session into `ai/session/raw/` so your notes can point at *why* you decided something. A
+conversation holds whatever was said in it: client names, unreleased plans, personal details, a key
+someone pasted in. `ai/okf.conf` controls this, and **the default is the safe one**:
+
+| `archive =` | What happens | Use it when |
+|---|---|---|
+| **`local`** *(default)* | Saved on your computer, **gitignored**. Never pushed. | Almost always. Always, if unsure. |
+| `shared` | Saved **and committed** — ships to anyone who can read the repo. | Private repo, and you accept that |
+| `off` | Not saved at all. | The work is confidential |
+
+You don't have to trust yourself to remember: in `local` mode the tool **refuses to write** the
+transcript anywhere git isn't ignoring. The raw `.jsonl` is refused in *every* mode — it contains
+the output of every command Claude ran, which can include your environment variables and file
+contents.
+
+**3. The secret scanner is not a safety net.** It finds keys shaped like keys (`ghp_…`, `sk-ant-…`,
+`AKIA…`) and blanks them out. It **cannot** find passwords, database connection strings, personal
+data, or internal hostnames — those look like ordinary writing. When it says `0 hits` it means
+*"nothing obvious"*, never *"safe to publish"*.
+
+**4. On a public repo, keep the knowledge base out of git.** `/end-session` writes runbooks
+describing where your credentials live and how to refresh them. That's useful to you and a map for
+a stranger. For a public repo, `/init-ai-workspace` will detect it (`gh repo view --json
+visibility`) and recommend gitignoring `ai/session/` — or all of `ai/`. You lose "the notes survive
+a fresh clone", which is a real cost and the right trade: an unreviewed publish is worse than a
+lost note. Commit `ai/` on a public repo **only if you will read every file before every push.**
+
+> **If you think you already leaked a key:** rotate it now — revoke the old one and issue a new one.
+> Then worry about the file. Rotating is the only step that actually works.
+
 ## Quickstart
 
 In any project, ask Claude Code to run `/init-ai-workspace`. It scaffolds:

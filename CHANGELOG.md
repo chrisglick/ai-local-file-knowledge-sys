@@ -3,6 +3,55 @@
 Notable changes to the skills and the `okf_normalize` engine. Dates are release dates.
 The engine reports its own version with `ai/scripts/okf --version`.
 
+## 2026-07-15 — disclosure controls (safety release)
+
+**`distill_transcript 0.1` → `0.2`** · new `ai/okf.conf` · 57 tests (was 51)
+
+Archiving conversations made a decision's *why* citable. It also made it possible to publish a
+conversation by accident. This release makes that a deliberate, enforced choice with a safe default,
+and fixes an instruction that told the agent to write secrets down.
+
+### Fixed — read this one
+- **`/end-session` Phase 3 instructed the agent to record "every key, cookie, env var".** The
+  capture protocol says the opposite (*"Secrets — point to where they live, never paste them"*), and
+  Phase 3 is labelled the highest-value phase, so it's the one that got followed. It was an
+  instruction to write credentials into a runbook the system then tells you to commit. Phase 3 now
+  says to record **where** a credential lives and **how to refresh it**, never the value, and notes
+  that a secret in git history must be rotated rather than deleted.
+
+### Added
+- **`ai/okf.conf` with `archive = off | local | shared`**, and `okf.conf.template` written by
+  `/init-ai-workspace` — plain-English, aimed at someone who doesn't think about this daily.
+
+  | mode | behaviour |
+  |---|---|
+  | `local` **(default)** | archive to `ai/<session>/raw/`, gitignored — never pushed |
+  | `shared` | archive **and commit** — private repos, informed choice only |
+  | `off` | don't archive; decisions then have no citable source |
+
+- **Enforcement, not advice.** `distill_transcript.py` calls `git check-ignore` *before writing* and
+  **refuses** to create an un-gitignored transcript under `local`. The raw `.jsonl` is refused in
+  **every** mode — it holds every tool result (env dumps, file contents, command stdout). A file
+  that is never written cannot be committed by mistake.
+- **Fails safe.** Missing, garbled, or empty config → `local`. A typo must never silently upgrade a
+  project to publishing its conversations.
+- **`/init-ai-workspace` Phase 2.5 — decide what leaves this machine.** Detects repo visibility
+  (`gh repo view --json visibility`) and, for a public repo, recommends gitignoring `ai/<session>/`
+  or all of `ai/` — stating plainly that this forfeits "survives a fresh clone", and that the trade
+  is correct because an unreviewed publish is worse than a lost note.
+- **README safety section** in plain language: push is permanent, rotate don't delete, the scanner
+  finds shapes not secrets, and public repos should keep the knowledge base local.
+- `--mode` flag to override the config for a single run.
+
+### Warnings
+- **`0 hits` from the secret scan means "nothing obvious", never "safe to publish".** Passwords,
+  connection strings, PII, and internal hostnames have no detectable shape.
+- **A leaked credential must be rotated, not deleted.** Git keeps history; forks and clones keep
+  copies. Removing the file changes nothing.
+- **Existing projects have no `ai/okf.conf`** and therefore behave as `local` — safe, but if you
+  were relying on distilled transcripts being committed, re-run `/init-ai-workspace` and choose
+  `shared` deliberately.
+
 ## 2026-07-15 — conversation provenance
 
 **engine `0.7` → `0.8`** · new tool `distill_transcript.py 0.1` · 51 tests (was 33)
