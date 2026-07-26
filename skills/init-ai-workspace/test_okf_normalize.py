@@ -100,6 +100,16 @@ def test_workaround_is_a_valid_type():
     assert not any("outside our enum" in c for c in changes)
 
 
+# ---- govern-work adoptions (v0.9): open-question type ----
+
+def test_open_question_is_a_valid_type():
+    assert "open-question" in okf.TYPE_ENUM
+    new, changes, errors = okf.normalize_fm(
+        {"type": "open-question", "title": "T", "description": "d"}, {},
+        "open-question_x.md", today=TODAY)
+    assert not any("outside our enum" in c for c in changes)
+
+
 def test_relations_typed_and_validated(tmp_path):
     (tmp_path / "schema_target.md").write_text("---\ntype: schema\n---\nx\n", encoding="utf-8")
     note = tmp_path / "decision_x.md"

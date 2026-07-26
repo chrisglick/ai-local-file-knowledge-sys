@@ -49,3 +49,57 @@ archive = local
 # keeps it in history, and anyone who cloned or forked already has it. Rotate
 # the credential — that is the only real fix.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# govern-work settings — only read if you've installed the govern-work skill.
+# Uncomment and fill in the ones you need; every line here has a safe absence
+# (govern-work refuses loudly, and tells you which line to add, rather than
+# guessing).
+#
+#   govern_verify_command
+#       The ONE command that proves this project's work is correct — the
+#       same thing you'd run by hand after a change to know it's still good.
+#       `gov mint` refuses to start any contract without this set: without a
+#       verify command, the system can certify "the checklist was followed"
+#       but never "the work is actually right." For code, this is usually
+#       your test command. Example:
+#         govern_verify_command = python -m pytest -q
+#
+#   govern_verify_trivially_true
+#       Set this to `true` ONLY for a project with no automated check at all
+#       (a pure docs or research repo). It tells govern-work "there is
+#       genuinely nothing to run" instead of leaving the verify command
+#       blank and hoping nobody notices. It prints a loud one-time banner
+#       and is recorded on every contract, so nobody mistakes silence for a
+#       real check. The ledger gate (a completion report with a `##
+#       Decisions` section) and the deny-list still apply either way —
+#       this setting only ever affects whether CORRECTNESS is checked.
+#         govern_verify_trivially_true = true
+#
+#   govern_base_branch
+#       Which branch a new contract worktree is built from. Most repos never
+#       need this — it defaults to `main`. Set it if your default branch is
+#       named something else.
+#         govern_base_branch = main
+#
+#   govern_worktree_dir
+#       Where contract worktrees are created. Defaults to a sibling folder
+#       next to this repo (`../<repo>-contracts`) so they never clutter the
+#       repo itself. Change this only if that default collides with
+#       something on your machine.
+#         govern_worktree_dir = ../my-project-contracts
+#
+#   govern_ratchet_baseline
+#       Where `gov --ratchet` / `gov --baseline` keep their committed count
+#       file. Defaults to `ai/govern-baseline.json`. You'll rarely need to
+#       change this; it's here so the ratchet's own record can move without
+#       editing code.
+#         govern_ratchet_baseline = ai/govern-baseline.json
+#
+#   govern_ratchet_grep_<name>
+#       An extra count for `gov --ratchet` to track, beyond the built-in
+#       "unverified notes" count. Each one is a name you pick plus a regex —
+#       the ratchet refuses to let its match count rise. Useful for tracking
+#       your own "known debt" markers over time.
+#         govern_ratchet_grep_todos = TODO\(unowned\)
+# ---------------------------------------------------------------------------

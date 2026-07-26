@@ -45,7 +45,10 @@ RESERVED = {"index.md", "log.md"}
 # Our type enum (valid OKF type strings; also the filename prefix convention).
 # `workaround` (cq lifecycle.kind) = a TEMPORARY fix expected to be superseded once tooling exists;
 # distinct from a `gotcha`, which is a permanent external constraint.
-TYPE_ENUM = {"gotcha", "workaround", "schema", "decision", "pattern", "runbook", "reference"}
+# `open-question` (govern-work v0.9) = a fork nobody has decided yet; closed by `gov --rule`,
+# which supersedes it with a `decision` note carrying the verbatim ruling.
+TYPE_ENUM = {"gotcha", "workaround", "schema", "decision", "pattern", "runbook", "reference",
+             "open-question"}
 
 # Ordered (type -> index heading) for grouping concepts within a directory index.
 TYPE_HEADINGS = [
@@ -53,6 +56,7 @@ TYPE_HEADINGS = [
     ("workaround", "Workarounds (temporary — expect supersession)"),
     ("schema", "Schema / Constants"),
     ("decision", "Decisions"),
+    ("open-question", "Open questions (undecided forks — close via `gov --rule`)"),
     ("pattern", "Patterns"),
     ("runbook", "Runbooks"),
     ("reference", "Reference (external pointers)"),

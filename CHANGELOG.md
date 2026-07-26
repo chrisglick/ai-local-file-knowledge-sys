@@ -3,6 +3,57 @@
 Notable changes to the skills and the `okf_normalize` engine. Dates are release dates.
 The engine reports its own version with `ai/scripts/okf --version`.
 
+## 2026-07-25 — `govern-work` (the enforcement layer)
+
+**`okf_normalize` engine unchanged (still 0.8)** · new skill `govern-work` (`govern.py`,
+`govern_contract.py`) · `TYPE_ENUM` gains `open-question` · 58 `init-ai-workspace` tests (was 57)
+· 76 new `govern-work` tests
+
+The three existing skills are a **capture** system: they record knowledge after the fact and say
+so, plainly, in their own Limitations section — nothing forces the recording to happen. This
+release adds a fourth, optional skill that supplies the enforcement layer: a deny-list guard, a
+drift detector, a ratchet, and a `mint`/`verify`/`land`/`abort` contract runner over git
+worktrees, so the highest-value disciplines move to a mechanically checked boundary instead of
+staying something an agent has to remember to do mid-work.
+
+### Added
+- **`skills/govern-work/`** — the new skill. `govern.py` (stdlib + pyyaml, same as
+  `okf_normalize.py`): `--open`, `--rule`, `--lint-spec`, `--ratchet`, `--baseline`, `--drift`,
+  `--gate`. `govern_contract.py`: `mint` / `verify` / `land` / `abort`, over real `git worktree`s.
+  `gov.shim.sh` — the ~10-line `ai/scripts/gov` project shim, same interpreter-probe convention as
+  `okf.shim.sh`. `hooks/pre-commit` — the deny-list guard, exact-match only, inert outside a
+  contract. `hooks/stop-gate.sh` — the Stop hook this repo's own README says it does not ship;
+  this is that hook, calling `gov --gate`. Full doctrine and every verb:
+  [`skills/govern-work/SKILL.md`](skills/govern-work/SKILL.md).
+- **`okf_normalize.py`'s `TYPE_ENUM` gains `open-question`** (`gotcha, workaround, schema,
+  decision, pattern, runbook, reference, open-question`) — a one-line, explicitly scoped addition
+  so `gov --open`'s notes pass `okf --check`/`--gate` like every other concept type, instead of
+  permanently showing a "type outside our enum" drift line. `open-question` is a fork nobody has
+  decided yet; `gov --rule` closes one into a `type: decision` note carrying the ruling verbatim.
+- **`init-ai-workspace` scaffolds `govern-work` into a project when that skill is installed**
+  (Phase 2.6 — idempotent, marker-gated, create-only, same mechanism as every other phase): the
+  `ai/scripts/gov` shim, `ai/contracts/_TEMPLATE-contract.md` +
+  `ai/contracts/_TEMPLATE-open-question.md`, a `govern-work settings` block appended to
+  `ai/okf.conf` (flat `govern_`-prefixed keys, same teaching tone as the existing `archive =`
+  block), and a separate `<!-- govern-work -->` marker section in root `CLAUDE.md` carrying a
+  `## Verify` placeholder that `gov mint` refuses against until a human fills it in. If no
+  `govern_verify_command` is configured, prints a one-time teaching block explaining that without
+  one, `gov land` can certify "the ledger is complete" but never "the work is correct" — keyed off
+  the missing config key, never off "no tests" (a docs/research repo legitimately has none).
+- **README**: `govern-work` as the fourth skill, its own honesty note (advisory-strength, not
+  airtight — a contracted agent with a shell can bypass every guard here; this raises the floor
+  from briefing discipline to mechanical default, not to airtight, which needs sandboxing and is
+  out of scope), and a day-zero note (a fresh adopter's real first week is `--lint-spec` + the
+  contract runner + the ledger gate; `--drift`/`--ratchet` earn their keep as history accrues).
+
+### Changed
+- **`KNOWLEDGE-SYSTEM.md`'s Limitations section** — two items partially struck, precisely scoped
+  to what `govern-work` actually closes (not to "review is now forced" or "capture is now
+  automatic," neither of which is true): the unbounded promotion queue is now bounded by
+  `gov --ratchet`/`--baseline` (review itself is still manual); capture-of-decisions is now
+  mandatory for any work routed through `gov land`'s ledger gate (ordinary, non-contracted
+  sessions are still fully operator-dependent, unchanged).
+
 ## 2026-07-15 — disclosure controls (safety release)
 
 **`distill_transcript 0.1` → `0.2`** · new `ai/okf.conf` · 57 tests (was 51)

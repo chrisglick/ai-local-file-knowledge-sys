@@ -3,12 +3,15 @@
 In-repo, git-tracked, provenance-checked knowledge base. Goal: distill a fact once, retrieve cheaply (don't re-derive from code/chat each session).
 
 Flow: `init` (scaffold) → `backfill` (seed, once) → `end-session` (capture, every session). All write `ai/memory/` through `okf_normalize.py`, reached per-project via the `ai/scripts/okf` shim.
+Optionally, `govern-work` sits on top as the enforcement layer — see its own `SKILL.md`; this doc
+covers the three capture skills only, and the Limitations section below notes exactly which of
+its own gaps `govern-work` closes.
 
 ## The three skills
 
 | Skill | Does | When |
 |---|---|---|
-| `init-ai-workspace` | Scaffold + normalize the `ai/` structure. Idempotent, non-destructive. | Onboard a project / fix format drift |
+| `init-ai-workspace` | Scaffold + normalize the `ai/` structure (and, if installed, `govern-work`'s scaffolding). Idempotent, non-destructive. | Onboard a project / fix format drift |
 | `backfill-memory` | Bulk-seed memory from static assets (notes, DB schema, config, code). Capped campaigns. Output is `status: unverified`. | Once, on un-distilled history |
 | `end-session` | Capture this session; beat the 3 deaths of context (chat ends / one machine / fresh clone). | Every session close |
 
@@ -184,8 +187,17 @@ Indexes + graph are generated, never hand-written (`--reindex`; prose above `<!-
 
 ## Limitations
 
-- Operator-dependent; capture is not automatic.
-- Promotion queue unbounded; nothing forces review → unvouched facts accumulate.
+- Operator-dependent; capture is not automatic. ~~Partially fixed for contracted work~~ —
+  `govern-work`'s `gov land` refuses to merge a contract without a completion report containing a
+  `## Decisions` section (`none` is a valid, explicit answer): for anything routed through the
+  contract runner, the ledger write is mandatory at the merge boundary, not optional mid-work.
+  Still fully operator-dependent for ordinary, non-contracted sessions — `end-session` is still
+  something a human has to remember to run.
+- ~~Promotion queue unbounded~~ — `govern-work`'s `gov --ratchet` / `gov --baseline` bound the
+  `status: unverified` count: `--ratchet` fails the gate if it rose above its committed baseline,
+  and `--baseline` can only ever be rewritten downward. **Nothing forces review** is still true —
+  the ratchet stops the queue from *growing*, it does not review anything in it; promotion from
+  `unverified` to `verified` is still a human-only act via `--review`.
 - No auto-merge; dedup is manual.
 - Anti-hallucination gate is prompt-enforced, not guaranteed (codebase adapter = highest risk).
 - Graph edgeless unless notes inline-linked; `--suggest-links` is a hint.

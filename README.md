@@ -1,8 +1,9 @@
 # ai-local-file-knowledge-sys
 
-Three Claude Code skills that give a repo a **local, in-repo, git-tracked knowledge base** — so a
+Four Claude Code skills that give a repo a **local, in-repo, git-tracked knowledge base** — so a
 fact gets distilled once and retrieved cheaply, instead of re-derived from code and chat every
-session.
+session — plus an enforcement layer that gates on the ledger instead of asking an agent to
+remember it.
 
 Knowledge lives in `ai/memory/` as an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
 (OKF) bundle: plain markdown + YAML frontmatter, one concept per file, every note carrying its
@@ -13,15 +14,17 @@ reads fine in any text editor.
 strengths, and limitations. Read that for the *why*; this file is the *how to run it*.
 **Version history and upgrade warnings: [CHANGELOG.md](CHANGELOG.md).**
 
-## The three skills
+## The four skills
 
 | Skill | Does | When |
 |---|---|---|
-| [`init-ai-workspace`](skills/init-ai-workspace/) | Scaffold + normalize the `ai/` structure. Idempotent, non-destructive. | Onboard a project / fix format drift |
+| [`init-ai-workspace`](skills/init-ai-workspace/) | Scaffold + normalize the `ai/` structure (and, if installed, `govern-work`'s scaffolding). Idempotent, non-destructive. | Onboard a project / fix format drift |
 | [`backfill-memory`](skills/backfill-memory/) | Bulk-seed memory from static assets (notes, DB schema, config, code). Every claim cited or dropped. Output lands `status: unverified`. | Once, on un-distilled history |
 | [`end-session`](skills/end-session/) | Capture the session; beat the 3 deaths of context (chat ends / one machine / fresh clone). | Every session close |
+| [`govern-work`](skills/govern-work/) | The enforcement layer: a deny-list guard, a drift detector, a ratchet, and a `mint`/`verify`/`land`/`abort` contract runner over git worktrees — so capture is gated, not merely requested. Optional; layers on top of the other three. | Bound and isolate agent build work; gate a merge on a completion report |
 
-`init` + `end-session` are operator-incremental. `backfill` is one-time mining.
+`init` + `end-session` are operator-incremental. `backfill` is one-time mining. `govern-work` is
+the optional enforcement layer over all three.
 
 ## Install
 
@@ -179,6 +182,33 @@ The shim resolves the engine at `~/.claude/skills/init-ai-workspace/`. Override 
 `OKF_SKILL_DIR` if you install elsewhere. A clone without the skill installed gets a shim that
 exits 127 — the data is still plain markdown and reads fine; only the tooling is absent.
 
+## `govern-work` — the enforcement layer, and how honest it actually is
+
+The three skills above are a **capture** system: they record knowledge after the fact and admit,
+in the limitations below, that nothing forces the recording to happen.
+[`govern-work`](skills/govern-work/) is the optional fourth skill that moves the highest-value
+disciplines — write the decision down, size the work sanely, gate the merge on a completion
+report — to a mechanically checked boundary (`gov land`) instead of relying on an agent to spend
+tokens on the ledger mid-work, when it's the lowest-value thing it could be doing. Full verb
+reference and doctrine: [`skills/govern-work/SKILL.md`](skills/govern-work/SKILL.md).
+
+**Say this plainly, in the same register as the rest of this README: these guards are
+advisory-strength, not airtight.** A contracted agent has a shell and file access. It can bypass
+every one of them if it chooses to — `git commit --no-verify` past the deny-list hook, edit the
+guard file directly, skip `gov land` and merge by hand. What the tooling actually does is raise
+the default cost of doing the wrong thing above zero, and make the wrong thing visible and
+refusable by default: the baseline moves from "works only if everyone remembers the discipline"
+to "works unless someone deliberately overrides it, loudly." That is the floor this system raises
+— from briefing discipline to mechanical default. Airtight enforcement needs running agents in a
+sandbox with no such access at all, which is a different, heavier system than this one, and is
+explicitly out of scope here.
+
+**Day zero.** A fresh adopter's first week of value is realistically `gov --lint-spec` + the
+contract runner (`mint`/`verify`/`land`/`abort`) + the ledger gate at `land` — those work
+immediately, on a repo with nothing. `gov --drift` and `gov --ratchet` earn their keep as session
+and note history accrues; don't judge either on day one. Every verb degrades with a named
+explanation on a repo that has nothing yet, never a silent empty result.
+
 ## Scope and honest limits
 
 This is a scaffold for diligence, not a substitute for it. Trust rests on discipline plus human
@@ -195,9 +225,11 @@ the ones to know before adopting:
   no `source:` can durably resolve.
 - **The anti-hallucination gate is prompt-enforced, not guaranteed.** The codebase adapter in
   `backfill-memory` is the highest-risk surface.
-- **No Stop hook ships here.** `KNOWLEDGE-SYSTEM.md` and the shim's `--gate` verb describe a
-  drift-check Stop hook living in `~/.claude/hooks/`. That hook is not part of this repo — wire
-  `ai/scripts/okf --gate` into your own hook config if you want it enforced automatically.
+- **A Stop hook now ships, but only if you install and wire `govern-work`.** These three skills
+  alone still don't ship one — `ai/scripts/okf --gate` needs a caller. The optional fourth skill,
+  [`govern-work`](skills/govern-work/), ships `hooks/stop-gate.sh` (calls `gov --gate`, which
+  composes `okf --gate` + drift + ratchet) — wiring it into Claude Code's own hook config is a
+  project choice, not automatic on install.
 - **Cross-platform friction.** Windows backslash paths and case-insensitive filesystem renames
   both need care (the skills call this out where it bites).
 
