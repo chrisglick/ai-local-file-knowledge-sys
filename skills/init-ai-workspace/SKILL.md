@@ -28,7 +28,9 @@ so knowledge is distilled once and retrieved cheaply, not regenerated every sess
    get a yes before running it.
 4. **History-preserving** — use `git mv` so renames keep blame/history.
 
-Run the phases in order. Use `pwd`/repo root as the target unless the user names one.
+Run the phases in order. Use `pwd`/repo root as the target unless the user names one. The
+conditional phases (1, 2.6, 4) each live in a reference file — load one only when its trigger
+condition holds.
 
 ---
 
@@ -42,44 +44,32 @@ Check and report:
 - Project **status doc** — `STATUS.md` at root? a different name/path? Note it; it's `{{STATUS}}`
   in the templates (default `STATUS.md`). If none exists, the index will still point at the
   intended path — flag that the project should start one.
-- `ai/memory/index.md` — exists? (or a legacy uppercase `INDEX.md` — note it; Phase 4 renames it to
-  the OKF-reserved lowercase `index.md`.) `ai/CAPTURE.md`? `ai/README.md`? If `ai/README.md` exists
-  but is an older "folder map" (no index-of-indexes / no situation read-order table), offer to upgrade it.
+- `ai/memory/index.md` — exists? (or a legacy uppercase `INDEX.md` — note it; the Phase 4
+  conformance pass renames it to the OKF-reserved lowercase `index.md`.) `ai/CAPTURE.md`?
+  `ai/README.md`? If `ai/README.md` exists but is an older "folder map" (no index-of-indexes /
+  no situation read-order table), offer to upgrade it.
 - Session journal dir — does `ai/session/` (singular) or `ai/sessions/` (plural) already exist?
   Note which spelling is in use; you will **reuse it**, not create the other variant.
-- **Transcript retention (report this loudly — it has a deadline).** Read `cleanupPeriodDays` from
-  `~/.claude/settings.json`. Claude Code deletes session files older than this **at startup**, and
-  the **default is 30 days** when the key is absent. That is the shelf life of every "why" this
-  project hasn't archived yet:
+- `ai/SYSTEMS.md` (external-systems manifest) and root `SETUP.md` (fresh-clone checklist) —
+  exist? If absent they're scaffolded in Phase 2.
+- **Transcript retention (report this loudly — it has a deadline).** Claude Code prunes session
+  transcripts older than `cleanupPeriodDays` (default 30) at startup, and `/backfill-memory`
+  cannot mine what no longer exists — see
+  [transcript safety](../reference/transcript-safety.md):
   ```bash
   grep -n 'cleanupPeriodDays' ~/.claude/settings.json || echo "unset -> default 30 days"
   ls -1 ~/.claude/projects/*/*.jsonl 2>/dev/null | wc -l   # transcripts still on disk
   ```
-  If it's unset or low, tell the user plainly: *transcripts older than N days are already gone, and
-  `/backfill-memory` cannot mine what no longer exists.* Offer to raise it
-  (`"cleanupPeriodDays": 3650`) — that's a one-line edit to their settings, and it only protects
-  sessions **from now on**; it cannot recover pruned ones. `/end-session` Phase 0 archives each
-  session into the repo, which is what makes the setting stop mattering going forward.
+  If unset or low, say plainly that older transcripts are already gone, and offer to raise it
+  (`"cleanupPeriodDays": 3650`) — a one-line settings edit that protects future sessions only.
 Summarize what will be created/migrated/skipped, then proceed.
 
 ---
 
-## Phase 1 — Migrate `.ai/` → `ai/` (only if `.ai/` exists; approval-gated)
-Skip entirely if there's already an `ai/` and no `.ai/`. If `.ai/` exists:
-
-1. **Collision safety check** — never rewrite a `.ai` domain URL (e.g. `mem0.ai/`):
-   `grep -rn '[A-Za-z0-9]\.ai/' --include='*.md' --include='*.ts' --include='*.mjs' --include='*.json' --include='*.sh' --include='*.html' --exclude-dir=node_modules --exclude-dir=.git .`
-   If any hits are real domains, exclude those files/lines from the sed below (do them by hand).
-2. **Check for untracked files** under `.ai/`: `git status --porcelain .ai/ | grep '^??'`.
-   `git mv` only moves tracked files — move any untracked stragglers with plain `mv` afterward.
-3. **Rename (git repo):** `git mv .ai ai` — then move untracked leftovers: `[ -d .ai ] && mv .ai/* ai/ 2>/dev/null; [ -d .ai ] && rmdir .ai`.
-   **Non-git:** plain `mv .ai ai`.
-4. **Update forward-slash references** across text files (safe after the collision check):
-   `grep -rlZ --include='*.md' --include='*.ts' --include='*.mjs' --include='*.json' --include='*.sh' --include='*.html' --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist '\.ai/' . | xargs -0 -r sed -i 's#\.ai/#ai/#g'`
-5. **Update Windows backslash references** (`...\.ai\...`) — sed backslash escaping is unreliable;
-   find them with `grep -rn '\.ai\\' --include='*.md' .` and fix each with an exact Edit
-   (`\.ai\` → `\ai\`). Don't forget any external memory/notes index that names the path.
-6. **Verify zero stragglers:** `git grep -n '\.ai[/\\]' -- ':!node_modules'` must return nothing.
+## Phase 1 — Migrate `.ai/` → `ai/` (conditional)
+**Only if `.ai/` exists** (skip entirely when there's already an `ai/` and no `.ai/`): read and
+follow [`reference/migrate-dot-ai.md`](reference/migrate-dot-ai.md) — the approval-gated,
+collision-safe rename with repo-wide reference fixups and the zero-stragglers verification.
 
 ---
 
@@ -97,20 +87,20 @@ Also create `ai/{{SESSION_DIR}}/raw/` — where `/end-session` archives each ses
 `ai/okf.conf` from this skill's **`okf.conf.template`** (create only if absent; it records the
 `archive` mode chosen in Phase 2.5 below).
 
-**`.gitignore` — this is a safety boundary, not tidiness.** Write the rules that match the mode:
+**`.gitignore` — a safety boundary, not tidiness.** Write the rules that match the mode:
 ```gitignore
 ai/okf-memory-graph.html          # regenerable viewer output
 ai/{{SESSION_DIR}}/raw/*.jsonl    # ALWAYS: raw transcripts hold tool output (env dumps, file reads, stdout)
 ai/{{SESSION_DIR}}/raw/*.md       # if archive = local  (the conversation stays on this machine)
 ```
 The `*.jsonl` rule is unconditional in every mode — `distill_transcript.py` refuses to write there
-if it isn't ignored. Never invert it: **the raw transcript is not the committable artifact.**
+if it isn't ignored (why: [transcript safety](../reference/transcript-safety.md)).
 
 **Session dir spelling — reuse, don't duplicate:** both `ai/session/` (singular, canonical
 default) and `ai/sessions/` (plural) are valid. If either already exists, use that one and
-do NOT create the other. Only when neither exists, create `ai/session/`. Whichever spelling
-is in play, use it consistently in the README, CAPTURE, and CLAUDE.md text you write below
-(`{{SESSION_DIR}}` in the templates = the chosen dir name).
+do NOT create the other — creating the second variant fragments the journal. Only when neither
+exists, create `ai/session/`. Use the chosen spelling consistently in the README, CAPTURE, and
+CLAUDE.md text you write below (`{{SESSION_DIR}}` in the templates = the chosen dir name).
 Create these files ONLY if they don't already exist (replace `{{PROJECT}}` with the repo/dir name).
 If a file exists, leave it untouched and note it as "kept".
 
@@ -137,9 +127,8 @@ The scaffolded `ai/memory/` is an **[Open Knowledge Format](https://github.com/G
 (OKF) bundle** — a published external standard (markdown + YAML frontmatter, non-empty `type` per
 concept), extended with our `source`/`status`/`**Verify:**` anti-rot discipline (OKF tolerates the
 extra keys). The CAPTURE template carries the canonical frontmatter; the **reserved index file is
-lowercase `index.md`** and carries no frontmatter. Phase 4 normalizes an existing bundle to this
-standard. (The OKF graph viewer is a GLOBAL tool in this skill dir — `okf-viewer/render.py`, reached
-per-project via the thin `ai/scripts/okf --render` shim; it is NOT vendored into each project.)
+lowercase `index.md`** and carries no frontmatter. The Phase 4 conformance pass normalizes an
+existing bundle to this standard.
 
 **`ai/memory/index.md`** — the wiki TOC (OKF-reserved; no frontmatter). Include the
 `<!-- okf-index:auto -->` marker exactly as shown below the preamble — `okf_normalize.py --reindex`
@@ -160,18 +149,37 @@ you create a file in `ai/memory/`. Format/rules: [`../CAPTURE.md`](../CAPTURE.md
 ## Runbooks (exact command sequences)
 ```
 
-**`RESUME.md`** (repo **root**, not `ai/`) — the T0 resumption packet. Create a stub ONLY if
-absent (if it exists, leave it — `/end-session` owns this file): copy this skill's
-`RESUME.template.md` and substitute `{{PROJECT}}` / `{{STATUS}}`. This keeps the index of
-indexes' `../RESUME.md` link from dangling on a fresh workspace; `/end-session` Phase 9
-overwrites the stub with real active-thread state.
+**`RESUME.md`** (repo **root**, not `ai/`) — the **thin thread index** (one row per thread →
+its plan file; detail lives in the plans, never here). Create a stub ONLY if absent (if it
+exists, leave it — `/end-session` owns this file): copy this skill's `RESUME.template.md` and
+substitute `{{PROJECT}}` / `{{STATUS}}`. This keeps the index of indexes' `../RESUME.md` link
+from dangling on a fresh workspace; `/end-session` Phase 9 regenerates the thread table from
+plan frontmatter.
+
+**`ai/SYSTEMS.md`** — the declarative manifest of external services, MCPs/skills, and generated
+artifacts the project touches (copy `SYSTEMS.template.md`, substitute `{{PROJECT}}`). Fill what
+you can detect (git remotes, MCP servers in use, tracker ids in existing notes) and leave the
+rest as template rows — `/end-session` Phase 7 keeps it synced, `/resume-session` reads it to
+know what to poll for external drift. Pointers only, never credential values.
+
+**`SETUP.md`** (repo **root**) — the fresh-clone checklist (copy `SETUP.template.md`). Detect
+the silent-failure steps that already exist (a `.githooks/` dir needing `git config
+core.hooksPath`, an `.env.example`, a gitignored credentials file) and record them; a step
+skipped silently on a fresh clone is exactly what this file prevents. Auth entries are
+*pointers* (where it lives, how to refresh, expiry symptom) — never values.
+
+**Plan convention** — `ai/plans/` files are **live per-thread state documents**, not frozen
+specs: one thread = one plan = one owner, with `status`/`owner`/`ticket`/`blocked_by`/`as_of`
+frontmatter (see `PLAN.template.md`; point `ai/CAPTURE.md` writers at it). Existing plan files
+without frontmatter are fine — flag them for `/audit-knowledge` rather than mass-editing here.
 
 ---
 
 ## Phase 2.5 — Decide what leaves this machine (ASK; never assume)
 `/end-session` can save each conversation into the repo so a decision's *why* has a source you can
-open. That is genuinely useful and it is also the one part of this system that can **publish
-something you didn't mean to publish**. Settle it now, at scaffold time, not at 2am mid-session.
+open — genuinely useful, and also the one part of this system that can **publish something you
+didn't mean to publish**. Settle it now, at scaffold time, not at 2am mid-session. Full modes,
+enforcement, and the public-repo rules: [transcript safety](../reference/transcript-safety.md).
 
 **Detect first — don't ask a question the repo already answers:**
 ```bash
@@ -179,114 +187,35 @@ git remote -v                                        # any remote at all?
 gh repo view --json visibility -q .visibility 2>/dev/null   # PUBLIC | PRIVATE | (blank = unknown)
 ```
 
-**If the repo is PUBLIC** (or is heading for a public host), say this plainly and do not soften it:
-> Anything committed here is public permanently. Deleting a file later does not help — git keeps it
-> in history, and forks, clones, and caches keep it after that. A leaked credential must be
-> **rotated**, not deleted.
+- **PUBLIC** (or heading to a public host): state the rotate-not-delete warning from the
+  reference plainly, default to **`archive = local`**, and offer, in order:
+  1. **`ai/{{SESSION_DIR}}/` ignored entirely** (journal + transcripts stay local; `memory/` and
+     `plans/` commit). Good default: the curated notes are the shareable part.
+  2. **All of `ai/` ignored** — local-only knowledge base, for when nobody will review each file
+     before pushing. It forfeits "survives a fresh clone" — say so; an unreviewed publish is
+     worse than a lost note.
+  3. **Commit it, reviewed** — only if the user will actually read each file before every push.
+- **PRIVATE**: `archive = local` is still the default; `shared` is a fine, informed choice for a
+  team that wants citations to resolve on a clone.
+- **Unknown** (no remote, or no `gh`): use `local` — a repo with no remote today gets one tomorrow.
 
-For a public repo, default to **`archive = local`** and recommend gitignoring the knowledge that
-accumulates operational detail. `/end-session` writes runbooks describing *where* credentials live
-and how to refresh them; that is useful to you and a map for a stranger. Offer, in order:
-1. **`ai/{{SESSION_DIR}}/` ignored entirely** (journal + transcripts stay local; `memory/` and
-   `plans/` commit). Good default for a public repo: the curated notes are the shareable part.
-2. **All of `ai/` ignored** — the knowledge base is local-only. Choose this when nobody will review
-   each file before pushing. It forfeits "survives a fresh clone" — say so; that trade is correct
-   here, because an unreviewed publish is worse than a lost note.
-3. **Commit it, reviewed.** Only if the user will actually read each file before every push.
-
-**If PRIVATE**, `archive = local` is still the default; `shared` is a fine, informed choice for a
-team that wants citations to resolve on a clone. **If unknown** (no remote, or no `gh`), use
-`local` — a repo with no remote today gets one tomorrow.
-
-Write the answer to `ai/okf.conf` (`okf.conf.template`) and make `.gitignore` match. The config is
-not decoration: `distill_transcript.py` reads it and **refuses to write an un-ignored transcript in
-`local` mode**, so the choice is enforced by git rather than by anyone remembering it.
-
-State the outcome in one line the user can check, e.g.
-*"archive = local — conversations are saved to ai/session/raw/ on this machine and are gitignored;
-nothing from a chat will be pushed."*
+Write the answer to `ai/okf.conf` (`okf.conf.template`) and make `.gitignore` match — the config
+is enforced by `distill_transcript.py`, not by memory. State the outcome in one line the user can
+check, e.g. *"archive = local — conversations are saved to ai/session/raw/ on this machine and
+are gitignored; nothing from a chat will be pushed."*
 
 ---
 
-## Phase 2.6 — Scaffold `govern-work` (optional; only if that skill is installed)
-
-`govern-work` is a separate, optional skill (the enforcement layer + contract runner). Detect it,
-don't assume it:
-
+## Phase 2.6 — Scaffold `govern-work` (conditional)
+`govern-work` is a separate, optional skill. Detect it, don't assume it:
 ```bash
 GOV_ENGINE="${GOV_SKILL_DIR:-$HOME/.claude/skills/govern-work}/govern.py"
-[ -f "$GOV_ENGINE" ] && echo "govern-work installed" || echo "govern-work not installed -- skip Phase 2.6"
+[ -f "$GOV_ENGINE" ] && echo "govern-work installed" || echo "not installed -- skip Phase 2.6"
 ```
-
-**Not installed:** skip this whole phase silently — nothing about the rest of `init-ai-workspace`
-depends on it. Don't nag about a skill the user hasn't chosen to add.
-
-**Installed:** scaffold it exactly like everything else in this skill — idempotent, marker-gated,
-create-only, never overwrite existing content.
-
-1. **The shim.** Copy `govern-work`'s own `gov.shim.sh` to `ai/scripts/gov` (create only if
-   absent) and `chmod +x` it — identical mechanism to the `okf.shim.sh` → `ai/scripts/okf` copy
-   in Phase 2. It resolves the global engine at `~/.claude/skills/govern-work/` (override with
-   `GOV_SKILL_DIR`), same probe-and-fail-127 convention as the `okf` shim.
-
-2. **Spec + note templates.** Create `ai/contracts/` if absent. Copy this skill's
-   `_TEMPLATE-contract.template.md` to `ai/contracts/_TEMPLATE-contract.md` and
-   `_TEMPLATE-open-question.template.md` to `ai/contracts/_TEMPLATE-open-question.md` — both
-   create-only. These are copy-and-edit starting points for a human or agent minting a contract
-   or (rarely) hand-filing an open question; the templates' own header comments explain the guard
-   rules they exist to satisfy on the first try.
-
-3. **Config.** `ai/okf.conf` already gets the full `govern-work settings` block (see this skill's
-   `okf.conf.template`) whenever it's created fresh in Phase 2. For a project that already had an
-   `ai/okf.conf` before this phase ran (upgrade case): check whether it already contains the
-   marker text `govern-work settings` —
-   ```bash
-   grep -q "govern-work settings" ai/okf.conf 2>/dev/null && echo "already has the block" || echo "append it"
-   ```
-   If missing, *append* the same commented-out block from `okf.conf.template` (the section that
-   starts `# govern-work settings` through its closing `# ---`) to the end of the existing
-   `ai/okf.conf` — never touch anything already in that file.
-
-4. **`.gitignore`.** Add `ai/contracts/*.json` (create-only append, if not already present) — this
-   is where contract bookkeeping (worktree paths, timestamps) lives; it's operational state, not
-   knowledge, and keeping it out of git from the start means the very first `gov mint` in this
-   project never has to make its own bookkeeping commit just to keep the tree clean for `gov land`.
-
-5. **`CLAUDE.md`.** Same append convention as Phase 3b below, but a **separate marker**,
-   `<!-- govern-work -->`, so this section and the `<!-- knowledge-system -->` section never
-   collide or get confused for one another:
-   - **No `<!-- govern-work -->` marker yet:** append this skill's
-     `govern-work-claude-md-section.template.md` to root `CLAUDE.md` (create the file first if
-     root `CLAUDE.md` doesn't exist yet — but in that case Phase 3b will already be creating it in
-     the same run; append this section into the same file, after Phase 3b's content).
-   - **Marker already present:** skip (idempotent).
-
-   That template ships a `## Verify` section with a **deliberate placeholder** — `gov --lint-spec`
-   and `gov mint` both refuse while it stands (they treat `TODO`/`<...>`-shaped text as
-   unfilled), which is the intended behavior, not a bug: it forces a human to state the project's
-   real verify command before any contract can be minted against it, and the refusal message says
-   exactly what to fill in. It also carries the `Expected: <text>` line convention `gov verify`
-   parses live from `CLAUDE.md` — filling that in (not just the command) gets the stronger "and it
-   actually printed the right thing" gate, not just an exit-code check.
-
-6. **The R15 verify-gap teaching block — print this ONCE, this run, only if needed.** After step 3
-   above, check whether `ai/okf.conf` actually has a live (non-comment, non-empty)
-   `govern_verify_command = ...` line. If it does not, print this block **once**, plainly, and
-   move on — never repeat it on a later run, and never key this off "no tests exist" (a docs or
-   research project legitimately has none; that is not the trigger):
-
-   > **No verify command is configured yet.** Without one, `gov land` can certify "the ledger is
-   > complete and the enforcement instruments are untouched" — but it can **never** certify "the
-   > work is correct." Those are different claims, and only a real check closes the second one.
-   > Setting `govern_verify_command` in `ai/okf.conf` is the single highest-leverage addition you
-   > can make to this setup; for a codebase, that usually means your test command. If this project
-   > genuinely has no automated check (a pure docs/research repo), set
-   > `govern_verify_trivially_true = true` instead of leaving this blank — see the comment above
-   > that key in `ai/okf.conf` for what that trades away.
-
-   Detection is mechanical and universal (the absence of the configured key) — never
-   test-framework sniffing, which is per-language, fragile, and wrong advice for a repo that isn't
-   software at all.
+**Installed:** read and follow [`reference/govern-scaffold.md`](reference/govern-scaffold.md)
+(shim, contract templates, config block, `<!-- govern-work -->` CLAUDE.md section, R15
+verify-gap teaching block). **Not installed:** skip silently — don't nag about a skill the user
+hasn't chosen to add.
 
 ---
 
@@ -316,86 +245,26 @@ It routes the agent to `ai/README.md` (the index of indexes) **first**, then to 
 
 ---
 
-## Phase 4 — OKF conformance pass (normalize an existing bundle; approval-gated)
-Bring an existing `ai/memory/` to the literal-OKF standard so the format stops drifting between
-sessions. **Skip if `ai/memory/` has no concept files yet** (a fresh scaffold is born conformant).
-This phase has the same discipline as Phase 1: detect → report → get a yes → fix → verify.
-
-The mechanical engine is this skill's **`okf_normalize.py`** (deps: `pyyaml` only). It splits the
-work: it **rewrites frontmatter** itself, and only **reports** renames (which need repo-wide
-reference fixups — those are your job, below).
-
-1. **Dry-run report (never mutate first):**
-   `python <skill-dir>/okf_normalize.py ai/memory`
-   It lists per-file frontmatter changes (`updated→timestamp`, `description` derived from the
-   `index.md` hook, `tags: []` added), any concept it **can't** fix (missing `type`, or no index
-   hook to source a `description` from — a human must write those), a `RENAMES:` block
-   (`INDEX.md→index.md`, off-convention filenames), and — if the bundle is flat and ≥~20 concepts —
-   a `SUGGESTION:` block with a rough slug-token tally to seed foldering (step 5).
-2. **Show the user the report and get approval** before any write. If files need a human-written
-   `description`/`type`, surface them — don't invent prose.
-3. **Apply frontmatter:** `python <skill-dir>/okf_normalize.py ai/memory --apply`.
-4. **Perform the renames with reference fixups** (the dangerous part — a bare `mv` corrupts links):
-   for each rename in the report, `git mv OLD NEW` (or `mv` if non-git), then rewrite every inbound
-   reference across the repo — `index.md` body links, `CLAUDE.md`, `README.md`, sibling notes,
-   sessions, plans. Reuse Phase 1's grep-then-sed recipe (and hand-Edit Windows backslash paths).
-   For `INDEX.md→index.md` on a case-insensitive filesystem, rename via a temp
-   (`git mv INDEX.md _index.tmp && git mv _index.tmp index.md`) so the case change actually takes.
-5. **Fold by topic if the bundle has earned it** (the dry-run prints a `SUGGESTION:` when flat and
-   ≥~20 notes). The script's slug-token tally is a **rough hint, not the answer** — it mislabels
-   token accidents (`lapsed-acme-*` → `lapsed`) and can't tell that related domains belong in one folder
-   (e.g. a `db` note really belongs with `infra`) or spot domain-less notes. **Read the notes and refine it:** fold by
-   **topic/domain** (`acme/`, `billing/`), keep the `TYPE_` prefix, file singletons into the right
-   cluster's folder, leave generic/cross-cutting notes at root. Foldering is **placement only** —
-   `git mv` (or `mv`) each whole note into its topic dir, dropping a now-redundant topic token from
-   the slug, and rewrite inbound refs. **Never combine note contents** — one concept per file is
-   invariant; deduping two notes about the same fact is a *separate* capture-time step, not foldering.
-   **Propose the refined mapping and get a yes — don't auto-bucket.** Skip for small/flat bundles.
-6. **Regenerate indexes (generated, never hand-written):**
-   `python <skill-dir>/okf_normalize.py ai/memory --reindex` — emits root + per-topic `index.md`
-   from concept frontmatter, preserving prose above the `<!-- okf-index:auto -->` marker.
-7. **Verify clean:** re-run the dry-run — 0 frontmatter changes, 0 renames pending. Then
-   `git grep -n 'INDEX\.md'` should return nothing in tracked files (frozen session notes excepted).
-8. **Regenerate the graph** with the global viewer: `ai/scripts/okf --render` (or
-   `python <skill-dir>/okf-viewer/render.py ai/memory ai/okf-memory-graph.html`). It's nesting-aware
-   (hierarchical concept-ids); the HTML output is a per-project artifact (gitignore it).
-
-Conformance is enforced by the tool, not by hand — re-running this phase is the idempotent check.
+## Phase 4 — OKF conformance pass (conditional)
+**Only if `ai/memory/` already has concept files** (a fresh scaffold is born conformant): read
+and follow [`reference/okf-conformance.md`](reference/okf-conformance.md) — the approval-gated
+normalize pass (`okf_normalize.py` dry-run → apply → renames with reference fixups → optional
+topic foldering → `--reindex` → graph).
 
 ## Phase 5 — Verify & report
-- `git grep -n '\.ai[/\\]'` returns nothing (if a migration ran).
-- **OKF conformance** (if Phase 4 ran): `python <skill-dir>/okf_normalize.py ai/memory` reports 0
-  changes / 0 renames pending, and `git grep -n 'INDEX\.md'` returns nothing.
+- **If Phase 1 ran:** its step-6 zero-stragglers check passed.
+- **If Phase 4 ran:** its step-7 verify is clean (0 changes, 0 renames pending, no `INDEX.md`
+  references in tracked files).
 - **Index of indexes resolves:** every link in `ai/README.md` points at a real path —
-  `../RESUME.md`, `../{{STATUS}}`, `memory/index.md`, `{{SESSION_DIR}}/`, `plans/`, `CAPTURE.md`.
+  `../RESUME.md`, `../{{STATUS}}`, `../SETUP.md`, `SYSTEMS.md`, `memory/index.md`,
+  `{{SESSION_DIR}}/`, `plans/`, `CAPTURE.md`.
   (If `{{STATUS}}` doesn't exist yet, flag it: the project should start its status doc.)
 - **Both front doors wired:** root `README.md` and `CLAUDE.md` each contain one
   `<!-- knowledge-system -->` block pointing at `ai/README.md`.
-- **If Phase 2.6 ran:** `ai/scripts/gov` exists and is executable; `ai/contracts/_TEMPLATE-contract.md`
-  and `ai/contracts/_TEMPLATE-open-question.md` exist; `ai/okf.conf` contains the `govern-work
-  settings` block; `CLAUDE.md` contains one `<!-- govern-work -->` block; `.gitignore` contains
-  `ai/contracts/*.json`. If no `govern_verify_command` is set, confirm the R15 teaching block
-  above was shown exactly once this run, not on every prior run.
+- **If Phase 2.6 ran:** work through the verify checklist at the end of
+  `reference/govern-scaffold.md`.
 - The structure exists; list what was **created**, **migrated**, **kept** (skipped) —
   including `RESUME.md` (stub vs kept) and the root-`README.md` section (created vs appended vs kept).
 - **Durability reminder:** new files are untracked until committed — *untracked = lost on a
   fresh clone.* Recommend (and offer) a focused commit of the `ai/` scaffolding, honoring the
   repo's commit rules. Do not commit without the user's go-ahead.
-
-## Anti-patterns
-- Overwriting an existing `CAPTURE.md`/`CLAUDE.md`/memory file. (Create-only; append for CLAUDE.md.)
-- Creating `ai/session/` next to an existing `ai/sessions/` (or vice-versa) — fragments the journal.
-  Detect the existing spelling and reuse it; only default to `session/` when neither exists.
-- Running the rename sed before the domain-collision check.
-- Blanket-sed'ing backslash Windows paths (escaping breaks) — Edit those by hand.
-- Declaring done without `git grep` proving zero `.ai/` stragglers.
-- Committing the rename tangled with unrelated working-tree changes without flagging it.
-- Renaming a memory file (or `INDEX.md→index.md`) with a bare `mv` and leaving inbound links
-  dangling — every rename needs the repo-wide reference fixup (Phase 4 step 4).
-- Inventing `description`/`type` text the normalizer flagged as missing — derive from the index
-  hook or ask; an invented one-liner is worse than an empty field.
-- Hand-editing frontmatter to "fix conformance" instead of running `okf_normalize.py` — that's how
-  format drift starts.
-- Reading "group/merge related domains" (foldering) as *combine note files*. Foldering moves whole
-  files into topic dirs; it NEVER concatenates contents. One concept per file is invariant; merging
-  two notes that cover the same fact is a separate, deliberate dedup at capture time.

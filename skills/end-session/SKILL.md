@@ -29,33 +29,15 @@ If the project has an **`ai/CAPTURE.md`**, it governs *where* and *how* knowledg
 - Use the atomic file format and the "posted intent" decision format from `ai/CAPTURE.md`.
 If there is no `ai/CAPTURE.md`, use the defaults below (and consider running `/init-ai-workspace`).
 
-Work through every phase. Do not skip. Reconstruct from evidence — **do not trust your recollection of a long session.**
+Work through every phase, reconstructing from evidence — a long session's recollection drifts.
 
 ---
 
-## Phase 0 — Archive the transcript (do this FIRST; it's the citation target)
-Everything below distills this session into prose. Prose drifts from what was actually said, and
-**you cannot cite yourself as the source.** Archive the conversation first so every later phase has
-something real to point at.
-
-There is a deadline you don't control: Claude Code deletes session files older than
-`cleanupPeriodDays` (**default 30**) at startup. A note that cites "the chat where we decided X"
-dangles on day 31 — right when you finally need it.
-
-**This step saves the conversation to disk. Know what that means before running it:** the archive
-contains what was actually said this session — client names, unreleased plans, personal details, a
-credential someone pasted into chat. `ai/okf.conf` decides how far it travels, and the tooling
-enforces that choice rather than trusting anyone to remember it:
-
-| `archive =` | What happens | For |
-|---|---|---|
-| `local` *(default)* | Saved to `ai/<session-dir>/raw/`, **gitignored**. Never pushed. | Almost everyone |
-| `shared` | Saved **and committed** — ships to anyone who can read the repo. | Private repos, informed choice |
-| `off` | Not saved. Decisions then have no citable source. | Confidential work |
-
-No `ai/okf.conf`? It defaults to `local` — the safe end. **If this repo is public, do not use
-`shared`.** Public means permanent: deleting a file later doesn't help, because git keeps history
-and forks keep copies. A leaked credential must be **rotated**, not deleted.
+## Phase 0 — Archive the transcript (FIRST; it's the citation target)
+Everything below distills this session into prose, and **you cannot cite yourself as the source** —
+archive the conversation before distilling it, and before Claude Code's retention window deletes
+it. Archive modes, the md/jsonl split, secret-scan limits, and public-repo rules:
+[`../reference/transcript-safety.md`](../reference/transcript-safety.md).
 
 ```bash
 ai/scripts/okf --distill --out ai/<session-dir>/raw/$CLAUDE_CODE_SESSION_ID.md \
@@ -63,32 +45,13 @@ ai/scripts/okf --distill --out ai/<session-dir>/raw/$CLAUDE_CODE_SESSION_ID.md \
 ```
 (No shim? `python <init-ai-workspace-skill-dir>/distill_transcript.py --out ... --raw ...`)
 
-It reads `ai/okf.conf` itself and **refuses to write an un-gitignored transcript in `local` mode** —
-so a conversation can't be committed by accident. If it refuses, don't work around it by editing
-paths; fix `.gitignore` (re-run `/init-ai-workspace`) or change the mode deliberately.
-
-Two files, and the split is a safety boundary:
-- **`<id>.md` — human + assistant prose.** ~4% of the raw size. Tool results, tool calls, and
-  reasoning are dropped **by block type** — a structural exclusion, not a secret-scan. Tool output
-  is where keys actually land (an `env` dump, a config read, a command that prints a token);
-  dropping the whole category is deterministic in a way pattern-matching never is.
-- **`<id>.jsonl` — the untouched transcript. Never committed, in any mode** — the tool refuses if
-  the path isn't ignored. It survives `cleanupPeriodDays`, which is the point: it's your local
-  fallback when the distilled record isn't enough evidence.
-
-Then:
-- **Read the secret-scan line, and read what it admits it can't do.** It finds issuer-formatted
-  tokens (`ghp_`, `sk-ant-`, `AKIA`, …) and redacts them. It is blind to passwords, connection
-  strings, PII, internal hostnames, and proprietary data — those look like ordinary prose.
-  **`0 hits` means "nothing obvious", never "safe to publish".** Under `shared`, skim the file.
-- **Cite it from every note you write below.** A decision's `source:` is
-  `ai/<session-dir>/raw/<id>.md`, not `session 2026-07-15`. `--check` warns on prose sources
-  precisely because they can't be opened.
-- **Re-run this at the very end** if the session continued — the copy is a snapshot and `cp` overwrites.
-
-If the transcript is already gone (older than `cleanupPeriodDays`, or a non-Claude-Code surface),
-say so plainly in the session note rather than inventing a citation. An honest "source unavailable"
-beats a `source:` nobody can open.
+- **Cite it from every note you write below**: a decision's `source:` is
+  `ai/<session-dir>/raw/<id>.md`, never `session 2026-07-15` — a prose source can't be opened, so
+  the claim can never be re-checked (`--check` warns on these).
+- **Read the secret-scan line: `0 hits` means "nothing obvious", never "safe to publish".**
+- Re-run this at the very end if the session continued — the copy is a snapshot and `cp` overwrites.
+- Transcript already gone (older than `cleanupPeriodDays`, or a non-Claude-Code surface)? Say
+  "source unavailable" plainly in the session note — an honest gap beats an invented citation.
 
 ## Phase 1 — Reconstruct what actually happened (evidence, not memory)
 - Run `git status --short` and `git diff --stat` (and `git log` since session start) to see every file touched.
@@ -104,14 +67,38 @@ Write `notes/YYYY-MM-DD-<topic>.md` — or `ai/session/YYYY-MM-DD-<topic>.md` if
 - Findings in **prose** (numbers, verdicts, decisions) so they survive even if regenerable data is wiped.
 - Links to the plan(s), backlog, reports, and memory entries.
 
+## Phase 2.1 — Update the plan file(s) this session's thread(s) own (the live state)
+If the project uses the plan-as-thread convention (`ai/plans/*` with `status`/`as_of`
+frontmatter — see `PLAN.template.md` in the init-ai-workspace skill), the plan file is the
+**live state document** for its thread, and this session must leave it true:
+- Update its **Current state** and **Next actions** sections to match reality *now*.
+- Bump `as_of` to today; set `status` honestly (`active` / `blocked` + `blocked_by` tickets /
+  `done` / `parked`). A plan left saying "NEXT — Phase 2" when Phase 6 is current is exactly
+  the rot this system exists to prevent.
+- **Release the claim.** Clear the plan's `claimed:` field — the session is over, so no agent is
+  actively working the thread; a lingering claim blocks the next worker for 24h for nothing.
+  (Ownership — `owner:` — persists; the claim never does.) If you never set `claimed:` when work
+  started, say so in the close-out: the claim discipline only protects threads when every
+  session honors it.
+- **Done criteria**: check off any `DC-n` completed this session **with the probe's evidence
+  quoted** (in Current state or the session note). Evidence-free checkmarks are how a plan lies
+  with a straight face. Never renumber criteria; drops get tombstones.
+- **Mirror to the tracker** if `ticket:` is set and a tracker MCP is available: the ticket's
+  state/comment should reflect the plan's status change (offer it; don't silently push).
+- New thread started this session with no plan file? Create one from `PLAN.template.md` — a
+  thread without a plan file has no home for its state, and its detail will end up fattening
+  RESUME or orphaned in a side file.
+- The session note (Phase 2) records *what happened today*; the plan records *where the thread
+  stands*. Don't duplicate — link.
+
 ## Phase 3 — The 6-month cold-read test (the highest-value phase)
 Explicitly ask: *"If I reopened this with no memory, what would I be looking for, and what would I curse past-me for?"* Then make sure each exists:
 - **A runbook** — the exact command sequence to run/resume the work, in order.
 - **Auth & environment** — **where** each key/cookie/env var lives and **how to refresh it**, never
   the value. Write `AWS creds: ~/.aws/credentials [default] — refresh with aws sso login`, never the
-  key itself. (These pointers are almost always missing — they live in someone's head or buried in a
-  script — which is why the temptation is to paste the real thing. Don't. A runbook is committed, and
-  a secret in git history survives deleting the file; it must then be rotated, not removed.)
+  key itself. These pointers are almost always missing (they live in someone's head or buried in a
+  script), which is why the temptation is to paste the real thing — don't: a runbook is committed,
+  and a secret in git history must be rotated, not removed.
 - **Artifact layout** — where inputs/outputs live and the naming conventions.
 - **Prerequisites** — what must exist/run first.
 - **Gotchas learned** — the bugs you root-caused, the non-obvious behaviors, the "don't do X."
@@ -119,25 +106,36 @@ If any are missing, **write them now** (a `README`/runbook beside the code is id
 
 ## Phase 4 — Durability & git audit (the one that bites)
 For the key work, classify each path:
-- **Committed** (portable, survives a clone) — verify with `git ls-files --error-unmatch <path>`.
+- **Committed** (portable, survives a clone).
 - **Untracked** (filesystem-only — LOST on a fresh clone). ← the dangerous category.
 - **Gitignored / local-only** (e.g. data, secrets, generated outputs) — note that it's regenerable and how.
 - **In-memory** (`~/.claude/.../memory/`) — this machine only.
 State plainly in the session note + runbook what is NOT safe. **If important work is untracked, recommend (and offer to make) a commit** — branch named per the ticket, honoring the repo's commit rules (e.g. no AI attribution if that's the policy). Don't commit without the human's go-ahead unless the policy says otherwise.
 
 ## Phase 5 — Memory sweep (what's worth remembering, what's now wrong)
-- **New durable learnings?** If the project has `ai/memory/`, write them there as atomic files (`gotcha_`/`schema_`/`decision_`/`pattern_`/`runbook_`/`reference_`) per `ai/CAPTURE.md` + an `index.md` pointer — that is the canonical, in-repo, portable store. Otherwise capture as memory: `user` (who/preferences), `feedback` (how to work, with the why), `project` (ongoing state/decisions not derivable from code), `reference` (endpoints, keys, external pointers). Don't save what the repo/git already records.
+- **New durable learnings?** If the project has `ai/memory/`, write them there as atomic files (`gotcha_`/`correction_`/`schema_`/`decision_`/`pattern_`/`runbook_`/`reference_`) per `ai/CAPTURE.md` + an `index.md` pointer — that is the canonical, in-repo, portable store. Otherwise capture as memory: `user` (who/preferences), `feedback` (how to work, with the why), `project` (ongoing state/decisions not derivable from code), `reference` (endpoints, keys, external pointers). Don't save what the repo/git already records.
 - **Stale/wrong memory?** If this session contradicted an existing memory, fix or delete it (note when a prior memory misled you — that's a high-value correction).
-- **Index — regenerate, don't hand-edit** (if `ai/memory/` is an OKF bundle): the index is generated.
-  After writing/editing notes run `python <init-ai-workspace-skill-dir>/okf_normalize.py ai/memory --reindex`
-  to rebuild root + per-topic `index.md` from frontmatter (durable prose above the
-  `<!-- okf-index:auto -->` marker is preserved).
+- **Corrections you already caught?** If the human explicitly corrected a factual claim this
+  session, write the `correction_` note now (`**Wrong:** / **Right:** / **Why tempting:** /
+  **Risk:**`). A transcript scan is not sufficient coverage — you believed the wrong claim when
+  you made it, and silent corrections leave nothing to grep for; Phase 8's direct question is the
+  real net.
+- **Index — regenerate, don't hand-edit** (if `ai/memory/` is an OKF bundle): after writing/editing
+  notes run `python <init-ai-workspace-skill-dir>/okf_normalize.py ai/memory --reindex` to rebuild
+  root + per-topic `index.md` from frontmatter (durable prose above the `<!-- okf-index:auto -->`
+  marker is preserved).
 - **OKF conformance — run the tool, don't eyeball it** (see `ai/CAPTURE.md`): run
-  `python <init-ai-workspace-skill-dir>/okf_normalize.py ai/memory` (dry-run). If it reports any
-  frontmatter drift on the notes you touched (missing `type`, `updated`→`timestamp`, absent
-  `description`/`tags`), re-run with `--apply`; if it reports renames, run `/init-ai-workspace`
-  Phase 4 (which handles foldering + reference fixups) rather than a bare `mv`. The session is not
-  "captured" until it reports 0 drift.
+  `python <init-ai-workspace-skill-dir>/okf_normalize.py ai/memory` (dry-run). If it reports
+  frontmatter drift on the notes you touched, re-run with `--apply`; if it reports renames, run
+  `/init-ai-workspace`'s conformance pass (which handles foldering + reference fixups) rather than
+  a bare `mv`. The session is captured when it reports 0 drift.
+- **Report doctor staleness in ONE line — do NOT run `--doctor`.** Run
+  `python <init-ai-workspace-skill-dir>/okf_normalize.py ai/memory --doctor-age` and print its
+  single line (e.g. *"okf --doctor last run: fcb00b12, 47 commit(s) ago — consider
+  `/resume-session` or `/audit-knowledge`"*). This is deliberate: handing someone forty unrelated
+  findings as they try to leave is how you train them to stop running `/end-session`, which is
+  the phase that carries the correction question (Phase 8) and the durability audit (Phase 4).
+  `/resume-session` runs the doctor; close-out only says how long it's been.
 - **Link new notes inline** — when a new note genuinely relates to an existing one, add an inline
   markdown link between their bodies (`[other note](type_slug.md)`). That's what populates the OKF
   graph; cross-references that live only in `index.md` leave the graph disconnected.
@@ -145,43 +143,34 @@ State plainly in the session note + runbook what is NOT safe. **If important wor
 ## Phase 6 — Loose ends, caveats & decisions
 - **Open bugs / deferred work** → a backlog file (`ai/plans/...-known-gaps.md` or similar) with *what / why / where / fix* per item, prioritized.
 - **What's NOT trustworthy yet** — metric caveats, unverified numbers, data-integrity flags, "subset only," "needs human review." Future-you must know which results to distrust.
-- **Decisions + WHY** — any choice made this session that isn't self-evident from the code. Capture the rationale, not just the outcome (a decision without its why gets re-litigated).
+- **Decisions + WHY** — any choice made this session that isn't self-evident from the code. Capture the rationale, not just the outcome (a decision without its why gets re-litigated — and the *why* usually lives in the assistant turns, which is what the Phase 0 archive preserves).
 
 ## Phase 7 — Sync the surfaces (stale docs lie)
-- Are design docs, runbooks, dashboards, and reports consistent with what's actually true now? Regenerate generated artifacts (dashboards/rollups). Add a status banner or update to anything that now overstates/understates reality. Stale "current status" docs are worse than none.
-- **Regenerate the knowledge graph** if the project ships the OKF viewer (`ai/scripts/okf-viewer/render.py` or equivalent) and you touched `ai/memory/` this session — its HTML is a generated artifact like any dashboard.
+- Are design docs, runbooks, dashboards, reports, and `ai/SYSTEMS.md` consistent with what's actually true now? Regenerate generated artifacts (dashboards/rollups). Add a status banner or update to anything that now overstates/understates reality. Stale "current status" docs are worse than none.
+- **Regenerate the knowledge graph** if the project ships the OKF viewer (`ai/scripts/okf --render` or equivalent) and you touched `ai/memory/` this session — its HTML is a generated artifact like any dashboard.
 
 ## Phase 8 — Ask the human (only they know these)
 Use the question tool for the genuinely human-only inputs, e.g.:
+- **"Did I state anything factually wrong this session — including things you fixed yourself or
+  let slide?"** Ask this one every time — corrections that were never voiced (quietly edited out
+  of a draft, noticed and not mentioned) leave no trace to scan for. Each answer becomes a
+  `correction_` note (Phase 5 format); otherwise the claim dies with the conversation and the
+  next session asserts it again, confidently.
 - "Commit this session's work to git now?" (the durability close).
 - "Any decision/context I should record that I'm missing?"
 - "What's the actual next priority when we resume?" (your guess vs their intent can differ).
 - "Anything that should NOT be acted on / is on hold?"
 Keep it to what changes the handoff — don't quiz for sport.
 
-## Phase 9 - What is the Resumption prompt?
-Write a RESUME.MD in the root dir
-- If I wanted to prompt myself to continue this project in the direction indicated by the human, what would I need in the prompt to refill accurate context and understand next steps with informed questions to ask the human in resumption?
+## Phase 9 — Regenerate `RESUME.md` (the resumption packet)
+Rewrite root `RESUME.md` as the **thin thread index**: one row per thread → its plan file,
+regenerated from plan frontmatter (detail lives in the plans, never here). It must give a future
+agent enough to refill accurate context — the direction the human indicated in Phase 8, the single
+next action, and the informed questions to ask on resumption.
 
 ## Output — the close-out summary
 End with a tight report:
-1. **Captured** — the files written/updated (session note, runbook, memory, backlog, synced docs).
+1. **Captured** — the files written/updated (session note, plan updates, runbook, memory, backlog, synced docs, RESUME.md).
 2. **Durability verdict** — what's safe, what's untracked, the recommended commit.
 3. **Resume in one line** — the single next action a returning agent should take.
 4. The human-only questions (Phase 8), if any remain open.
-
-## Anti-patterns (the ways this fails)
-- A pretty summary with no **pick-up state** or **next action**.
-- Documenting *what* without *how to run it* (no command sequence / auth).
-- Assuming the work is safe without checking git (untracked ≠ saved).
-- **Citing `session 2026-07-15` (or "the chat where we decided X") as a `source:`** — nobody can
-  open that, so the claim can never be re-checked and rots silently. Cite the archived transcript.
-- **Committing the raw `.jsonl`** because it "looks like just a log." It carries every tool result:
-  env dumps, file contents, command stdout. Distilled `.md` is the committable artifact.
-- **Reading `secret scan: 0 hits` as "safe to commit."** It means no *issuer-formatted* token was
-  found. Passwords, PII, and internal hostnames are invisible to it.
-- Recording a decision's outcome while the reasoning lives only in the assistant's turns you didn't
-  archive — the *why* is what gets re-litigated, and it's rarely in the human's messages.
-- Writing new memory but leaving contradicted old memory in place.
-- Reporting results without flagging which numbers aren't trustworthy.
-- Skipping the human questions and guessing the next priority.

@@ -23,7 +23,8 @@ per item — but it runs on **Claude Code subagents** (no ADK/Gemini), writes th
 **`okf_normalize.py`** toolchain (so output is conformant by construction), and adds the
 **provenance + human-promotion** discipline OKF has none of.
 
-You (the agent) run every phase. The operator is hands-off except the final promotion review.
+You (the agent) run every phase, including the okf commands. The operator is hands-off except
+the final promotion review.
 
 ## Governing principles (these ARE the design — do not relax them)
 1. **Cite or drop (no invention).** Every claim in a minted concept must trace to a quoted slice
@@ -44,7 +45,8 @@ You (the agent) run every phase. The operator is hands-off except the final prom
    7-section one). Surface and resolve the conflict, don't write both as fact.
 6. **Volatile ≠ timeless.** Schemas, stable semantics, decisions+why, runbooks, pointers — yes.
    Live numbers (balances, row counts, current pipeline totals), anything trivially re-derivable
-   from code/git, and secrets — **no**.
+   from code/git, and secrets — **no**. And one concept per file, always — combining two notes'
+   contents is a deliberate dedup at capture time, never an automatic step.
 7. **Campaigns, not boil-the-ocean.** One run targets exactly one **(source adapter × target
    bundle)** with a hard candidate cap. No single unbounded sweep over an entire codebase.
 
@@ -59,7 +61,7 @@ Pick ONE per campaign. Each adapter is just *how Phase 1 enumerates the source i
 - **C. Config / infra wiring** — nginx, reverse-proxy, container/orchestrator, env manifests →
   `schema_`/`runbook_` network-wiring concepts. Enumerate = list the config files (declarative, local).
 - **D. Product codebase** — *biggest, last, hardest.* Per-repo / per-subsystem campaigns with caps,
-  never the whole tree at once. Highest hallucination risk → leans hardest on the Phase-3 gate.
+  never the whole tree at once. Highest hallucination risk → leans hardest on the cite-or-drop gate.
   Enumerate = the file/dir tree for the targeted subsystem.
 
 ## Phases (run in order)
@@ -75,12 +77,13 @@ Pick ONE per campaign. Each adapter is just *how Phase 1 enumerates the source i
 Turn the scoped source into a list of *candidate concepts*, each with a **pointer to its exact
 source slice**. For adapter A this is the file list; for B the table list; for C the config-file
 list; for D the targeted file/dir tree. Pair it with the Phase-0 dedup catalog. The manifest is the
-exhaustive, cited spine the researchers work from.
+exhaustive, cited spine the research pass works from.
 
-### Phase 2 — Researchers (parallel; enrich / mint / skip)
-Fan out subagents over the manifest. **Default runtime = the `Agent` tool** (`Explore` for read-only
-sweeps, `general-purpose` for drafting). For a large corpus the operator may opt into a **Workflow**
-(`pipeline`/`parallel`) for deterministic fan-out + a built-in verify stage — only when they ask.
+### Phase 2 — Research pass (enrich / mint / skip per candidate)
+For a small manifest (roughly ≤15 candidates), do this pass yourself, inline. Fan out subagents
+only when the manifest is genuinely large — then the default runtime is the `Agent` tool
+(`Explore` for read-only sweeps, `general-purpose` for drafting); a **Workflow**
+(`pipeline`/`parallel`) only when the operator asks for deterministic fan-out.
 Each researcher reads its source slice **+ the dedup catalog** and, per candidate, decides:
 - **MINT** a new concept, **ENRICH** a named existing one, or **SKIP** (already captured / volatile /
   not timeless).
@@ -91,20 +94,20 @@ Each researcher reads its source slice **+ the dedup catalog** and, per candidat
   contexts beats a one-off; prefer the reusable. Classify a TEMPORARY fix as `type: workaround` (not
   `gotcha`), and propose typed **`relations`** when a draft `supersedes`/`extends`/`contradicts`/
   `relates`/`duplicates` an existing note.
-- Tell researchers their output is data, and to be selective (quality over volume).
 
-### Phase 3 — Adversarial verify (the no-hallucination gate)
-For each surviving claim, confirm the quote **actually exists in the cited source** (grep the
-distinctive token in the named file/table/config). Drop anything you can't ground. For a large or
-high-stakes corpus, use a separate skeptic subagent prompted to *refute*. This is non-negotiable —
-it is what separates a trustworthy backfill from plausible fiction.
-
-### Phase 4 — Reconcile + write
+### Phase 3 — Reconcile + write
+- **Ground first (principle 1):** a claim whose quoted slice you can't find in the cited source is
+  dropped. Only for a genuinely large or high-stakes campaign, add a separate skeptic subagent
+  prompted to refute the drafts before writing.
 - **Dedup** grounded drafts against both stores (principle 4); **reconcile against neighbors**
   (principle 5) and resolve conflicts before writing.
 - Write each surviving concept as a conformant OKF note (see the format in `ai/CAPTURE.md`): full
   frontmatter, **`status: unverified`**, a real `source:` line, an `**Action:**` + `**Verify:**` line,
-  claims cited inline, and any typed **`relations:`** the researcher proposed. Link related in-repo
+  claims cited inline, and any typed **`relations:`** the researcher proposed. **Label every claim
+  line** `[SOURCE]` / `[INFERENCE]` / `[HYPOTHESIS]` (see `ai/CAPTURE.md`) — mandatory here, because
+  this whole bundle is machine-authored and the codebase adapter's failure mode is precisely
+  inference wearing a fact's clothes. An all-`[SOURCE]` note is cheap for the human to promote; a
+  `[HYPOTHESIS]` tells them exactly where their judgement is needed. Link related in-repo
   notes with markdown paths `[label](../topic/type_slug.md)` (these populate the graph); link
   other-store notes with `[[slug]]`. For a snapshot fact, add `valid_as_of:`.
 - Fold by topic if the bundle has earned it (the dry-run prints a `SUGGESTION:` at ~20 notes).
@@ -112,7 +115,7 @@ it is what separates a trustworthy backfill from plausible fiction.
 - Verify clean: `ai/scripts/okf --check` → 0 errors, 0 broken links, 0 drift (provenance warnings
   for genuinely out-of-repo `source:` paths are expected and acceptable).
 
-### Phase 4b — Cross-link pass (close the edgeless graph)
+### Phase 3b — Cross-link pass (close the edgeless graph)
 Cross-links only happen reliably if you *look* for them — a researcher seeing one source slice can't
 spot most connections. After writing this campaign's notes:
 1. Run **`ai/scripts/okf --suggest-links`** — it surfaces note pairs that share salient terms but have
@@ -125,7 +128,7 @@ spot most connections. After writing this campaign's notes:
    — and add the suggested back-link to the **promotion queue** for the human to approve.
 4. Re-run `ai/scripts/okf --check`: every relation must resolve (known verb + existing target).
 
-### Phase 5 — Promotion handoff
+### Phase 4 — Promotion handoff
 - `ai/scripts/okf --review` prints the **promotion queue** (all `status: unverified` notes with
   title + source). Hand this to the operator: they check each against its `source`/`**Verify:**`
   and flip to `status: verified`. **You never promote.**
@@ -136,13 +139,3 @@ spot most connections. After writing this campaign's notes:
 - `ai/scripts/okf` (dry-run) · `--check` (strict) · `--apply` · `--reindex` · `--move SRC DST`
   (move + rewrite links) · `--touch` · `--review` (promotion queue) · `--render` (graph) · `--version`.
 - Engine + viewer live once in the `init-ai-workspace` skill dir; projects carry only the shim + data.
-
-## Anti-patterns (the ways this fails)
-- Minting a concept whose claims you didn't grep-verify against the cited source ("cite or drop").
-- Writing `status: verified` on a machine-derived note (only the human promotes).
-- Editing/overwriting a `verified` or human-authored note to "enrich" it (mint adjacent instead).
-- Capturing live numbers, secrets, or anything re-derivable from code/git as "timeless".
-- Skipping the both-stores dedup and re-minting facts the global/personal memory already holds.
-- Boiling the ocean — one unbounded run over a whole codebase instead of capped campaigns.
-- Combining two notes' contents (that's a deliberate dedup at capture time, never an automatic step).
-- Asking the operator to run the okf commands — the skill drives them; the operator only promotes.
