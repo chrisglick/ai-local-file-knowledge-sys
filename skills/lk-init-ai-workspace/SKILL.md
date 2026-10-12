@@ -170,10 +170,16 @@ core.hooksPath`, an `.env.example`, a gitignored credentials file) and record th
 skipped silently on a fresh clone is exactly what this file prevents. Auth entries are
 *pointers* (where it lives, how to refresh, expiry symptom) — never values.
 
-**Plan convention** — `ai/plans/` files are **live per-thread state documents**, not frozen
-specs: one thread = one plan = one owner, with `status`/`owner`/`ticket`/`blocked_by`/`as_of`
-frontmatter (see `PLAN.template.md`; point `ai/CAPTURE.md` writers at it). Existing plan files
-without frontmatter are fine — flag them for `/lk-audit-knowledge` rather than mass-editing here.
+**Plan convention** — `ai/plans/` is the backlog. A plan is a **broad prose artifact**, the
+durable record of what sparked it, the human's rulings (verbatim, binding), the design, and the
+territory still open; it is not a unit of work. Work is cut from it one slice at a time and the
+plan's `## Slices` ledger records each one. Scaffold three files, create-only: copy
+`PLAN.template.md` to `ai/plans/_TEMPLATE-plan.md`, `PLANS-README.template.md` to
+`ai/plans/README.md` (lifecycle, the finish-before-starting rule, `_DONE/`), and
+`PLANS-INDEX.template.md` to `ai/plans/INDEX.md` (open plans routed by lane); create `ai/plans/_DONE/`.
+Frontmatter keys: `file`, `purpose`, `status` (a dated living one-liner), `opened`, `owner`,
+optional `lane` / `depends_on`, and `as_of`. Existing plan files without frontmatter are fine —
+flag them for `/lk-audit-knowledge` rather than mass-editing here.
 
 ---
 

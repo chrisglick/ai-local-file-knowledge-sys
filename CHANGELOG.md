@@ -3,6 +3,18 @@
 Notable changes to the skills and the `okf_normalize` engine. Dates are release dates.
 The engine reports its own version with `ai/scripts/okf --version`.
 
+## Unreleased
+
+### Changed
+- **Plan templates rebuilt from the real ones.** The 1.0.0 `PLAN.template.md` was a form
+  (status/owner/ticket/blocked_by). The template now ports the shape that two projects have
+  used across 100+ plans: a broad prose artifact with `## Trigger` first and a `## Slices`
+  ledger last, body headers chosen per plan from a proven menu, rulings recorded verbatim and
+  binding, frontmatter `file`/`purpose`/`status` (dated one-liner)/`opened`/`owner`/`lane`/
+  `depends_on`/`as_of`. Two new templates ship beside it: `PLANS-README.template.md` (the
+  lifecycle, the finish-before-starting rule, `_DONE/`) and `PLANS-INDEX.template.md` (open
+  plans routed by lane). `lk-init-ai-workspace` Phase 3 scaffolds all three, create-only.
+
 ## 2026-10-12 — lk 1.0.0: `lk-` rename, OKF v0.2 vocabulary, `lk-audit-knowledge`, `lk-doctor`, `govern-work` removed
 
 **`okf_normalize` engine 0.9 (OKF standard 0.2)** · all skills renamed `lk-*` and stamped
