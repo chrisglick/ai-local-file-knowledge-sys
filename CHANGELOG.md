@@ -5,6 +5,18 @@ The engine reports its own version with `ai/scripts/okf --version`.
 
 ## Unreleased
 
+### Added
+- **`plugins/lk-afk-watchdog`** — a Claude Code plugin (hooks module, 7 engine tests). After
+  the agent's last answer, if the person has not replied for `idleMinutes` (default 55) it runs
+  `/lk-end-session --headless` once in the same session. Disarmed by any prompt a person sends
+  or by session end; never arms in a `-p` run or on a subagent's turn; fires at most once per
+  idle stretch. Installed with `/plugin install lk-afk-watchdog --marketplace
+  chrisglick/ai-local-file-knowledge-sys` (a `.claude-plugin/marketplace.json` now sits at the
+  repo root).
+- **`lk-end-session` headless mode** (`--headless`): never asks, writes every would-be question
+  into the session note and RESUME, uses configured defaults, never commits, marks the note as
+  closed out unattended.
+
 ### Changed
 - **Plan templates rebuilt from the real ones.** The 1.0.0 `PLAN.template.md` was a form
   (status/owner/ticket/blocked_by). The template now ports the shape that two projects have

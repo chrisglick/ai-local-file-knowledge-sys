@@ -113,6 +113,28 @@ For the key work, classify each path:
 - **In-memory** (`~/.claude/.../memory/`) — this machine only.
 State plainly in the session note + runbook what is NOT safe. **If important work is untracked, recommend (and offer to make) a commit** — branch named per the ticket, honoring the repo's commit rules (e.g. no AI attribution if that's the policy). Don't commit without the human's go-ahead unless the policy says otherwise.
 
+## Headless mode (`/lk-end-session --headless`)
+
+Invoked with `--headless`, or by the `lk-afk-watchdog` plugin after the person has been silent
+for its idle window (55 minutes by default), this close-out runs **unattended**. The person is
+away; nothing you ask will be answered. Rules that override the phases below:
+
+- **Never call AskUserQuestion and never wait for input.** Every question a phase would ask
+  (Phase 2.5's archive mode, Phase 8's corrections, "did I get this right?") is WRITTEN instead:
+  under `## Questions for the human` in the session note, and mirrored into `RESUME.md`'s
+  `## Questions to ask on resume`. The next session asks them.
+- **Use the configured defaults.** `archive` comes from `ai/okf.conf`; if unset, `local`.
+- **Never commit or push.** Report what is untracked; the person decides when they're back.
+- **Everything you file is `status: draft`** with `generated.by` naming the agent, as always.
+- **Mark it.** The session note's first line says `Closed out headless (AFK watchdog), <timestamp>`
+  and `RESUME.md`'s "Last updated" line carries the same marker, so the person knows nobody
+  reviewed it.
+- **Keep the transcript short.** One summary paragraph at the end: what was captured, what is
+  untracked, and how many questions wait. No phase-by-phase narration.
+
+Everything else (reconstruct, RESUME, cold-read, durability audit, memory sweep, loose ends,
+doc sync) runs exactly as below.
+
 ## Phase 5 — Memory sweep (what's worth remembering, what's now wrong)
 - **New durable learnings?** If the project has `ai/memory/`, write them there as atomic files (`gotcha_`/`correction_`/`schema_`/`decision_`/`pattern_`/`runbook_`/`reference_`) per `ai/CAPTURE.md` + an `index.md` pointer — that is the canonical, in-repo, portable store. Otherwise capture as memory: `user` (who/preferences), `feedback` (how to work, with the why), `project` (ongoing state/decisions not derivable from code), `reference` (endpoints, keys, external pointers). Don't save what the repo/git already records.
 - **Stale/wrong memory?** If this session contradicted an existing memory, fix or delete it (note when a prior memory misled you — that's a high-value correction).

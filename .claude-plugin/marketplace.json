@@ -1,0 +1,7 @@
+{
+  "name": "lk",
+  "owner": { "name": "Chris Glick" },
+  "plugins": [
+    { "name": "lk-afk-watchdog", "source": "./plugins/lk-afk-watchdog" }
+  ]
+}

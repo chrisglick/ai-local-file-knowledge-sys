@@ -1,0 +1,14 @@
+{
+  "name": "lk-afk-watchdog",
+  "version": "0.1.0",
+  "author": { "name": "Chris Glick" },
+  "description": "After a configurable idle stretch with no reply from the person, runs /lk-end-session --headless once so the session is captured while they are away.",
+  "userConfig": {
+    "idleMinutes": {
+      "title": "Idle minutes before headless close-out",
+      "type": "number",
+      "description": "Minutes of silence after the agent's last answer before the headless close-out runs.",
+      "default": 55
+    }
+  }
+}

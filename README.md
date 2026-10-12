@@ -223,6 +223,19 @@ installed copies match the repo clone, does every `` `/skill` `` a SKILL.md ment
 exist, is the engine on the current OKF standard, do a project's shims resolve, does its bundle
 still use the legacy vocabulary. PASS/WARN/FAIL per check, every fix verb dry-run by default.
 
+## `lk-afk-watchdog` — the close-out that runs when you forgot to
+
+Capture is operator-dependent: someone has to say "end session", and some days nobody does.
+[`plugins/lk-afk-watchdog`](plugins/lk-afk-watchdog/) is a Claude Code plugin that waits 55
+minutes (configurable) after the agent's last answer and, if you still haven't replied, runs
+`/lk-end-session --headless` once in the same session: RESUME rewritten, session note and memory
+notes filed as drafts, every question it would have asked you written down instead, nothing
+committed. One close-out per idle stretch, never in a `-p` run, disarmed the moment you type.
+
+```
+/plugin install lk-afk-watchdog --marketplace chrisglick/ai-local-file-knowledge-sys
+```
+
 ## Scope and honest limits
 
 This is a scaffold for diligence, not a substitute for it. Trust rests on discipline plus human
@@ -230,7 +243,8 @@ review, not on mechanism. The failure mode is a growing `draft` queue and an edg
 not a crash. [KNOWLEDGE-SYSTEM.md](KNOWLEDGE-SYSTEM.md#limitations) lists the limitations in full;
 the ones to know before adopting:
 
-- **Capture is not automatic.** It's operator-dependent — you have to run `/lk-end-session`.
+- **Capture is not automatic.** It's operator-dependent — you have to run `/lk-end-session`,
+  or install `lk-afk-watchdog`, which runs it headless after 55 idle minutes.
 - **Nothing forces review.** `lk-audit-knowledge` triages the queue, but promotion
   (`okf --promote`) is still a human act nobody can be made to perform, and the queue is unbounded.
 - **Archiving starts the day you adopt it.** Sessions already pruned by `cleanupPeriodDays` are
