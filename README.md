@@ -1,11 +1,12 @@
 # ai-local-file-knowledge-sys
 
-Four Claude Code skills that give a repo a **local, in-repo, git-tracked knowledge base** — so a
+Five Claude Code skills — all prefixed `lk-` (*local knowledge*) so they group together in
+`~/.claude/skills` — that give a repo a **local, in-repo, git-tracked knowledge base** — so a
 fact gets distilled once and retrieved cheaply, instead of re-derived from code and chat every
 session — plus an enforcement layer that gates on the ledger instead of asking an agent to
 remember it.
 
-Knowledge lives in `ai/memory/` as an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
+Knowledge lives in `ai/memory/` as an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 (OKF) bundle: plain markdown + YAML frontmatter, one concept per file, every note carrying its
 `source` and a `**Verify:**` line. No database, no service, no vendor. It clones with the repo and
 reads fine in any text editor.
@@ -14,17 +15,19 @@ reads fine in any text editor.
 strengths, and limitations. Read that for the *why*; this file is the *how to run it*.
 **Version history and upgrade warnings: [CHANGELOG.md](CHANGELOG.md).**
 
-## The four skills
+## The five skills
 
 | Skill | Does | When |
 |---|---|---|
-| [`init-ai-workspace`](skills/init-ai-workspace/) | Scaffold + normalize the `ai/` structure (and, if installed, `govern-work`'s scaffolding). Idempotent, non-destructive. | Onboard a project / fix format drift |
-| [`backfill-memory`](skills/backfill-memory/) | Bulk-seed memory from static assets (notes, DB schema, config, code). Every claim cited or dropped. Output lands `status: unverified`. | Once, on un-distilled history |
-| [`end-session`](skills/end-session/) | Capture the session; beat the 3 deaths of context (chat ends / one machine / fresh clone). | Every session close |
-| [`govern-work`](skills/govern-work/) | The enforcement layer: a deny-list guard, a drift detector, a ratchet, and a `mint`/`verify`/`land`/`abort` contract runner over git worktrees — so capture is gated, not merely requested. Optional; layers on top of the other three. | Bound and isolate agent build work; gate a merge on a completion report |
+| [`lk-init-ai-workspace`](skills/lk-init-ai-workspace/) | Scaffold + normalize the `ai/` structure. Migrates a bundle to OKF v0.2. Idempotent, non-destructive. | Onboard a project / fix format drift |
+| [`lk-backfill-memory`](skills/lk-backfill-memory/) | Bulk-seed memory from static assets (notes, DB schema, config, code). Every claim cited or dropped. Output lands `status: draft`. | Once, on un-distilled history |
+| [`lk-end-session`](skills/lk-end-session/) | Capture the session; beat the 3 deaths of context (chat ends / one machine / fresh clone). | Every session close |
+| [`lk-audit-knowledge`](skills/lk-audit-knowledge/) | Quality triage of a bundle: machine-filed bursts, near-duplicates, low-information, stale and orphan notes → an editable plan a human approves before anything is deleted. | After a build campaign filed many notes; before promoting a backfill |
+| [`lk-doctor`](skills/lk-doctor/) | Health check of the install and a project's wiring: skill versions, drift against the repo clone, phantom `/skill` references, legacy vocabulary, shim paths, hooks. Safe fixes behind `--yes`. | After installing or upgrading; when anything feels off |
 
-`init` + `end-session` are operator-incremental. `backfill` is one-time mining. `govern-work` is
-the optional enforcement layer over all three.
+`init` + `end-session` are operator-incremental. `backfill` is one-time mining. `audit-knowledge`
+and `doctor` keep the other three honest — the first judges what the system *holds*, the second
+checks that the system *itself* is intact.
 
 ## Install
 
@@ -44,19 +47,37 @@ before. On Windows PowerShell, swap the copy for
 `pyyaml` is the only runtime dependency — the transcript distiller is stdlib-only. Verify:
 
 ```bash
-python ~/.claude/skills/init-ai-workspace/okf_normalize.py --version
-# okf_normalize tool 0.8; OKF standard 0.1
+python ~/.claude/skills/lk-init-ai-workspace/okf_normalize.py --version
+# okf_normalize tool 0.9; OKF standard 0.2; lk 1.0.0
 ```
+
+Then let the system check itself — every lk skill present, no leftover unprefixed copies, the
+engine on OKF 0.2, no `/skill` reference in any SKILL.md that names a skill you don't have:
+
+```bash
+python ~/.claude/skills/lk-doctor/lk_doctor.py
+```
+
+Inside a project, add `--project .` and it also checks the shims, `ai/okf.conf`, and whether the
+bundle still uses pre-v0.2 vocabulary.
 
 Optionally run the test suite (needs `pip install pytest`):
 
 ```bash
-cd ~/.claude/skills/init-ai-workspace && python -m pytest -q   # 51 passed
+cd ~/.claude/skills && python -m pytest -q lk-*   # every lk skill ships its tests
 ```
 
-**Upgrading from 0.7?** `--check` now warns on any `source:` that can't be opened — notes citing a
-session in prose will start failing. That's intended (those citations were never checkable), but
-it isn't silent: run `ai/scripts/okf --check` after updating. See [CHANGELOG.md](CHANGELOG.md).
+Contributors run `python -m pytest -q` from the clone root instead: that adds
+`tests/test_skill_docs.py`, the docs-versus-code contract (every `/skill` a SKILL.md names
+exists, every `--flag` it tells the agent to run exists in the script, every template a phase
+says to copy ships, every relative link resolves). Three of the five skills are prose and
+can't be unit-tested; this is the test for the way prose actually rots.
+
+**Upgrading from a pre-1.0 install?** Three things changed at once: the skills are now named
+`lk-*` (delete the old unprefixed copies, or let `lk-doctor --remove-legacy` do it), project shims
+that still point at the old names need `lk-doctor --fix-shims`, and every bundle needs
+`ai/scripts/okf --apply` to migrate to the OKF v0.2 vocabulary (`--check` treats the old keys as
+drift until you do). Run `/lk-doctor` first; it names each of these. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Read this before you use it on a public repo
 
@@ -69,7 +90,7 @@ in its history, and anyone who cloned or forked already has a copy. If a passwor
 lands in a public repo, deleting it does nothing — **you have to change the key itself** (rotate
 it). Assume anything pushed to a public repo is public forever.
 
-**2. Conversations get saved, and you choose how far they travel.** `/end-session` can save the
+**2. Conversations get saved, and you choose how far they travel.** `/lk-end-session` can save the
 session into `ai/session/raw/` so your notes can point at *why* you decided something. A
 conversation holds whatever was said in it: client names, unreleased plans, personal details, a key
 someone pasted in. `ai/okf.conf` controls this, and **the default is the safe one**:
@@ -90,9 +111,9 @@ contents.
 data, or internal hostnames — those look like ordinary writing. When it says `0 hits` it means
 *"nothing obvious"*, never *"safe to publish"*.
 
-**4. On a public repo, keep the knowledge base out of git.** `/end-session` writes runbooks
+**4. On a public repo, keep the knowledge base out of git.** `/lk-end-session` writes runbooks
 describing where your credentials live and how to refresh them. That's useful to you and a map for
-a stranger. For a public repo, `/init-ai-workspace` will detect it (`gh repo view --json
+a stranger. For a public repo, `/lk-init-ai-workspace` will detect it (`gh repo view --json
 visibility`) and recommend gitignoring `ai/session/` — or all of `ai/`. You lose "the notes survive
 a fresh clone", which is a real cost and the right trade: an unreviewed publish is worse than a
 lost note. Commit `ai/` on a public repo **only if you will read every file before every push.**
@@ -102,7 +123,7 @@ lost note. Commit `ai/` on a public repo **only if you will read every file befo
 
 ## Quickstart
 
-In any project, ask Claude Code to run `/init-ai-workspace`. It scaffolds:
+In any project, ask Claude Code to run `/lk-init-ai-workspace`. It scaffolds:
 
 ```
 project-root/
@@ -120,13 +141,13 @@ project-root/
     └── scripts/okf # 10-line shim → the global engine
 ```
 
-Then `/end-session` at each session close. If the project has years of undistilled history, run
-`/backfill-memory` once to seed it.
+Then `/lk-end-session` at each session close. If the project has years of undistilled history, run
+`/lk-backfill-memory` once to seed it.
 
-**Run `/init-ai-workspace` sooner rather than later.** Claude Code deletes session files older than
+**Run `/lk-init-ai-workspace` sooner rather than later.** Claude Code deletes session files older than
 `cleanupPeriodDays` ([default 30](https://code.claude.com/docs/en/settings)) at startup. Anything
 older than that window is already gone — archiving protects sessions from the day you adopt it, and
-`/backfill-memory` cannot mine transcripts that no longer exist.
+`/lk-backfill-memory` cannot mine transcripts that no longer exist.
 
 ## The engine
 
@@ -139,29 +160,29 @@ older than that window is already gone — archiving protects sessions from the 
 | `--apply` | rewrite frontmatter to canonical form |
 | `--reindex` | regenerate `index.md` from frontmatter |
 | `--move SRC DST` | move a note + rewrite inbound links |
-| `--review` | print the `status: unverified` promotion queue |
+| `--review` / `--promote` | print the `status: draft` promotion queue / human-promote a note (`stable` + `verified` entry + `stale_after`) |
 | `--suggest-links` | surface note pairs not yet linked |
 | `--render` | regenerate the graph HTML |
 | `--distill` | archive this session's transcript as a citable record |
 
-Full reference: [`okf_normalize.README.md`](skills/init-ai-workspace/okf_normalize.README.md).
+Full reference: [`okf_normalize.README.md`](skills/lk-init-ai-workspace/okf_normalize.README.md).
 
 ### Citing a conversation
 
-`source: src/auth/login.ts:42` works when a fact lives in code. A **decision**'s *why* was argued in
+A `sources` entry of `src/auth/login.ts:42` works when a fact lives in code. A **decision**'s *why* was argued in
 a chat — cite that as `session 2026-06-19` and nobody can open it, so the note can never be
 re-checked. Worse, Claude Code deletes session files older than `cleanupPeriodDays`
 (**[default 30](https://code.claude.com/docs/en/settings)**), so even a chat link dangles right when
 you need it.
 
-`/end-session` archives each session into the repo, and `--check` warns on any `source:` that can't
+`/lk-end-session` archives each session into the repo, and `--check` warns on any `sources` entry that can't
 be opened:
 
 ```
 decision_prose-source.md
-  ? `source` names a session/plan in prose, not a resolvable path -- cite the archived transcript
+  ? `sources` names a session/plan in prose, not a resolvable path -- cite the archived transcript
 decision_pruned.md
-  ? `source` path not found: ai/session/raw/deadbeef-....md
+  ? `sources` path not found: ai/session/raw/deadbeef-....md
 ```
 
 Two files land per session, and **the split is a safety boundary, not tidiness**:
@@ -178,73 +199,64 @@ isn't. A known-shape scan (`ghp_`, `sk-ant-`, `AKIA`, JWTs, PEM blocks…) then 
 but **`0 hits` is not a clearance** — passwords, PII, and internal hostnames have no detectable
 shape. Read the file before committing it.
 
-The shim resolves the engine at `~/.claude/skills/init-ai-workspace/`. Override with
+The shim resolves the engine at `~/.claude/skills/lk-init-ai-workspace/`. Override with
 `OKF_SKILL_DIR` if you install elsewhere. A clone without the skill installed gets a shim that
 exits 127 — the data is still plain markdown and reads fine; only the tooling is absent.
 
-## `govern-work` — the enforcement layer, and how honest it actually is
+## `lk-audit-knowledge` and `lk-doctor` — the two that keep the rest honest
 
-The three skills above are a **capture** system: they record knowledge after the fact and admit,
-in the limitations below, that nothing forces the recording to happen.
-[`govern-work`](skills/govern-work/) is the optional fourth skill that moves the highest-value
-disciplines — write the decision down, size the work sanely, gate the merge on a completion
-report — to a mechanically checked boundary (`gov land`) instead of relying on an agent to spend
-tokens on the ledger mid-work, when it's the lowest-value thing it could be doing. Full verb
-reference and doctrine: [`skills/govern-work/SKILL.md`](skills/govern-work/SKILL.md).
+Both were born from the same afternoon on a real project. A build-orchestration tool filed one
+note per *paragraph* of six completion reports, and the bundle woke up with 118 well-formed,
+near-empty `pattern` notes. `okf --check` passed: format
+checks can't tell garbage from knowledge. The skill docs pointed at an `/audit-knowledge` that had
+never been written, the installed engine had drifted 36 lines from the repo clone, and the
+normalizer still claimed OKF 0.1 while upstream had moved to 0.2.
 
-**Say this plainly, in the same register as the rest of this README: these guards are
-advisory-strength, not airtight.** A contracted agent has a shell and file access. It can bypass
-every one of them if it chooses to — `git commit --no-verify` past the deny-list hook, edit the
-guard file directly, skip `gov land` and merge by hand. What the tooling actually does is raise
-the default cost of doing the wrong thing above zero, and make the wrong thing visible and
-refusable by default: the baseline moves from "works only if everyone remembers the discipline"
-to "works unless someone deliberately overrides it, loudly." That is the floor this system raises
-— from briefing discipline to mechanical default. Airtight enforcement needs running agents in a
-sandbox with no such access at all, which is a different, heavier system than this one, and is
-explicitly out of scope here.
+[`lk-audit-knowledge`](skills/lk-audit-knowledge/) is the quality pass: a heuristic engine finds
+machine bursts, near-duplicates, low-information bodies, passed `stale_after` dates and orphans,
+writes an **editable plan**, the agent judges each cluster (never trusting the heuristic blindly),
+and a **human approves** before `--apply` deletes anything. Deletions are `git rm`, so they're
+recoverable; file contents are never merged by a script.
 
-**Day zero.** A fresh adopter's first week of value is realistically `gov --lint-spec` + the
-contract runner (`mint`/`verify`/`land`/`abort`) + the ledger gate at `land` — those work
-immediately, on a repo with nothing. `gov --drift` and `gov --ratchet` earn their keep as session
-and note history accrues; don't judge either on day one. Every verb degrades with a named
-explanation on a repo that has nothing yet, never a silent empty result.
+[`lk-doctor`](skills/lk-doctor/) is the system check: are all six skills installed, do the
+installed copies match the repo clone, does every `` `/skill` `` a SKILL.md mentions actually
+exist, is the engine on the current OKF standard, do a project's shims resolve, does its bundle
+still use the legacy vocabulary. PASS/WARN/FAIL per check, every fix verb dry-run by default.
 
 ## Scope and honest limits
 
 This is a scaffold for diligence, not a substitute for it. Trust rests on discipline plus human
-review, not on mechanism. The failure mode is a growing `unverified` queue and an edgeless graph —
+review, not on mechanism. The failure mode is a growing `draft` queue and an edgeless graph —
 not a crash. [KNOWLEDGE-SYSTEM.md](KNOWLEDGE-SYSTEM.md#limitations) lists the limitations in full;
 the ones to know before adopting:
 
-- **Capture is not automatic.** It's operator-dependent — you have to run `/end-session`.
-- **Nothing forces review.** The promotion queue is unbounded; unvouched facts accumulate.
+- **Capture is not automatic.** It's operator-dependent — you have to run `/lk-end-session`.
+- **Nothing forces review.** `lk-audit-knowledge` triages the queue, but promotion
+  (`okf --promote`) is still a human act nobody can be made to perform, and the queue is unbounded.
 - **Archiving starts the day you adopt it.** Sessions already pruned by `cleanupPeriodDays` are
-  gone; raising the setting protects only what's left. Run `/init-ai-workspace` early.
+  gone; raising the setting protects only what's left. Run `/lk-init-ai-workspace` early.
 - **Secret scanning is issuer-shaped only.** Committing a distilled transcript stays a human call.
 - **Only Claude Code writes an archivable transcript.** On claude.ai / Cowork the source is a chat
-  no `source:` can durably resolve.
+  no `sources` entry can durably resolve.
 - **The anti-hallucination gate is prompt-enforced, not guaranteed.** The codebase adapter in
-  `backfill-memory` is the highest-risk surface.
-- **A Stop hook now ships, but only if you install and wire `govern-work`.** These three skills
-  alone still don't ship one — `ai/scripts/okf --gate` needs a caller. The optional fourth skill,
-  [`govern-work`](skills/govern-work/), ships `hooks/stop-gate.sh` (calls `gov --gate`, which
-  composes `okf --gate` + drift + ratchet) — wiring it into Claude Code's own hook config is a
-  project choice, not automatic on install.
+  `lk-backfill-memory` is the highest-risk surface.
+- **No Stop hook ships.** `ai/scripts/okf --gate` is built for one (mechanical drift only, exit 1),
+  but wiring it into Claude Code's hook config is a project choice you make yourself.
 - **Cross-platform friction.** Windows backslash paths and case-insensitive filesystem renames
   both need care (the skills call this out where it bites).
 
 ## Licensing
 
-- Original work — the `okf_normalize.py` engine, the three skills, templates, and shim — is **MIT**
+- Original work — the `okf_normalize.py` engine, the five skills, templates, and shim — is **MIT**
   ([LICENSE](LICENSE)).
-- `skills/init-ai-workspace/okf-viewer/` is **vendored from Google Cloud Platform's
-  [`knowledge-catalog`](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)**
+- `skills/lk-init-ai-workspace/okf-viewer/` is **vendored from Google Cloud Platform's
+  [`open-knowledge-format`](https://github.com/GoogleCloudPlatform/open-knowledge-format)**
   (`okf/src/enrichment_agent/`) and remains **Apache-2.0**. One local patch (case-insensitive
   `index.md` skip) was applied. See
-  [`okf-viewer/UPSTREAM-LICENSE.md`](skills/init-ai-workspace/okf-viewer/UPSTREAM-LICENSE.md).
+  [`okf-viewer/UPSTREAM-LICENSE.md`](skills/lk-init-ai-workspace/okf-viewer/UPSTREAM-LICENSE.md).
 
 ## Prior art
 
-Open Knowledge Format (Google Cloud Platform `knowledge-catalog`) is the standard the bundle
+Open Knowledge Format (Google Cloud Platform `open-knowledge-format`, formerly `knowledge-catalog/okf`) is the standard the bundle
 targets. Note-shape borrows from `cq` knowledge commons (summary→detail→action, confirm-or-decay),
 `beads` (typed relations), and the Zep bi-temporal model (`valid_as_of`).

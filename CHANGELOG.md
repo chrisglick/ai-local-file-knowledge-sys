@@ -3,6 +3,116 @@
 Notable changes to the skills and the `okf_normalize` engine. Dates are release dates.
 The engine reports its own version with `ai/scripts/okf --version`.
 
+## 2026-10-12 — lk 1.0.0: `lk-` rename, OKF v0.2 vocabulary, `lk-audit-knowledge`, `lk-doctor`, `govern-work` removed
+
+**`okf_normalize` engine 0.9 (OKF standard 0.2)** · all skills renamed `lk-*` and stamped
+`version: 1.0.0` · two new skills · `govern-work` removed from the package · repo root `VERSION` file
+
+Born from one afternoon on a real project: a build-orchestration tool filed one note per
+*paragraph* of six completion reports, and the bundle woke up with 118 well-formed, near-empty
+`pattern` notes that `okf --check` passed. The docs pointed at an `/audit-knowledge` skill nobody
+had written, an installed engine had drifted from the repo clone, and the normalizer still claimed
+OKF 0.1 while upstream had moved to 0.2 — with a `status` enum ours contradicted. This release
+fixes each of those at the root, and removes the tool that did the filing from the package.
+
+### Breaking — read before upgrading
+- **Skills are renamed with an `lk-` prefix** (*local knowledge*) so they group together in
+  `~/.claude/skills`: `lk-init-ai-workspace`, `lk-backfill-memory`, `lk-end-session`,
+  `lk-reference`, plus the new `lk-audit-knowledge` and `lk-doctor`. Every
+  slash reference, shim default (`~/.claude/skills/lk-*`), template and hook path follows. Old
+  unprefixed installs keep working until deleted; project shims that point at the old names break
+  the moment they are. Order: `lk-doctor --sync-from <clone> --yes`, then `--fix-shims --yes` in
+  each project, then `--remove-legacy --yes`. `/lk-doctor` names every step for you.
+- **OKF v0.2 vocabulary.** The bundle now speaks the spec's own keys and `--check` treats the old
+  ones as drift until `ai/scripts/okf --apply` migrates them (every migration is listed in the
+  dry run first):
+
+  | legacy | v0.2 |
+  |---|---|
+  | `timestamp` / `updated` | `generated: {by, at}` (`by` = the actor rules below) |
+  | `source: "a; b"` | `sources: [{resource: a}, {resource: b}]` |
+  | `status: unverified` / `verified` / `stale` | `status: draft` / `stable` / `deprecated` (the spec's only values; absent = stable) |
+  | `status: open` / `closed` (open-questions) | `draft` / `deprecated` |
+  | `verified_on: DATE` | `verified: [{by: human:<id>, at: DATE}]` + `stale_after: DATE + 90d` |
+
+  Why: OKF v0.2 defines `status` as `draft | stable | deprecated` with *absent meaning stable*, so
+  our `status: unverified` was an invalid value a strict consumer could read as "stable" — the
+  opposite of what it meant. Trust now lives where the spec puts it: a `human:` actor in
+  `verified` is the human-reviewed tier; machine output is `draft` with `generated.by` naming the
+  producer (`claude-code/<model-id>`, `lk-backfill-memory/1.0`).
+- **`okf --review` lists `status: draft`; `okf --promote PATH...` is the only thing that writes a
+  `verified` entry.** It refuses a non-`human:` actor. Nothing else — no tool, no agent — sets
+  `stable`. Actor resolution: `--actor`, else `actor = human:<id>` in `ai/okf.conf`, else
+  `human:<git user.name>`, else `human:unknown`.
+- **A deprecated note whose successor relation resolves does not warn.** An open-question
+  superseded by a decision note (`deprecated` + `relates <decision>`) is a normal lifecycle end,
+  not rot; only an orphaned deprecation is flagged.
+
+### Added
+- **`skills/lk-audit-knowledge/`** — the quality pass the docs had promised. `audit_knowledge.py`
+  (pyyaml only) finds machine bursts (≥5 notes of one type, one source, one day), low-information
+  bodies, near-duplicates, passed `stale_after` / deprecated-but-still-linked notes, drafts never
+  promoted after 30 days, orphans, and one type dominating a bundle. Verbs: a read-only report,
+  `--json`, `--plan OUT.md` (an editable `action | path | reason` table with a suggested action
+  per note) and `--apply PLAN.md` (`git rm` or a backup move for delete; edits only the status
+  line for deprecate; merge-into and promote are printed, never done; refuses the whole plan if
+  any path leaves the bundle). The workflow: the script
+  suggests, the agent reads every flagged note and edits the plan, a human approves, then
+  `--apply`, `okf --reindex`, `okf --check`. Reads legacy and v0.2 frontmatter, so it works
+  mid-migration. Measured on the project that prompted it (135 notes before cleanup): it proposed
+  deleting exactly the 118 land-time notes and flagged none of the 17 real ones beyond orphan hints.
+- **`skills/lk-doctor/`** — the system check. `lk_doctor.py [--skills-dir D] [--repo CLONE]
+  [--project DIR] [--json]` prints PASS/WARN/FAIL per check with a one-line fix and exits 0 (no
+  FAIL) / 1 / 2 (usage). Install checks: every lk skill present and versioned; leftover unprefixed
+  copies; sha256 drift against the repo clone; the normalizer on OKF 0.2; backticked `/skill`
+  references in any SKILL.md that name no installed skill (this is what would have caught
+  `/audit-knowledge`, `/resume-session` and `--doctor-age`); python + pyyaml for the shims;
+  `cleanupPeriodDays` ≥ 365. Project checks: `ai/okf.conf`, whether the `okf` shim resolves
+  to a real engine, legacy vocabulary (WARN) and invalid v0.2 status values (FAIL), `okf_version`
+  on the root index, a promotion queue over 25. Fix verbs, each a dry run until
+  `--yes`: `--sync-from CLONE [--prune]`, `--remove-legacy` (only once each `lk-` counterpart is
+  installed), `--fix-shims`.
+- **`okf_normalize.py` 0.9:** `--promote`; `--actor`; root `index.md` gets `okf_version: "0.2"`
+  frontmatter on `--reindex`; `LK_VERSION`; `correction` joins `TYPE_ENUM` (lk-end-session had
+  been writing `correction_` notes the engine never accepted, so `--gate` failed on them);
+  trust-shape checks (`stable` with no `verified` entry, non-spec actor, passed `stale_after`).
+- Root `VERSION` (`1.0.0`) and `version: 1.0.0` in every SKILL.md so `lk-doctor` can compare.
+- **`tests/test_skill_docs.py`** — the docs-versus-code contract. Every `/skill` a SKILL.md
+  mentions must exist, every `--flag` the docs tell the agent to run must exist in that
+  script's argparse, every template `lk-init-ai-workspace` says to copy must ship, every
+  relative link must resolve, every SKILL.md must carry the release `version`. All three
+  phantoms found this release (`/audit-knowledge`, `/resume-session`, `--doctor-age`) would
+  have failed it on the July commit.
+  Its first run found two more: the cross-skill links to `transcript-safety.md` still pointed
+  at the pre-rename `reference/` dir, and `lk-init-ai-workspace` Phase 3 has told agents since
+  July to copy `SYSTEMS.template.md`, `SETUP.template.md` and `PLAN.template.md` — none of
+  which had ever been committed. All three now ship.
+
+### Removed
+- **`govern-work` is no longer part of this package.** It was the optional fourth skill since
+  2026-07-25: a deny-list guard, drift detector, ratchet and a `mint`/`verify`/`land`/`abort`
+  contract runner over git worktrees. It governs agent *builds* and only *consumes* the knowledge
+  base, so it never belonged in a package whose one promise is a local, git-tracked knowledge base
+  — and it was the tool that filed the 118 junk notes. It lives on as its own standalone repo. With
+  it go `lk-init-ai-workspace`'s Phase 2.6 scaffolding (the `ai/scripts/gov` shim, the
+  `ai/contracts/_TEMPLATE-*.md` templates, the `govern_*` keys in `okf.conf.template`, the
+  `<!-- govern-work -->` CLAUDE.md section) and every `gov` check in `lk-doctor`. Projects that use
+  it keep working: their shim points at wherever that skill is installed, not at this package.
+  `open-question` stays in `TYPE_ENUM` — it is a general concept, closed by a `decision` note.
+
+### Changed
+- Upstream moved: every link now points at `GoogleCloudPlatform/open-knowledge-format` (the old
+  `knowledge-catalog/okf` tree is a frozen snapshot carrying a "moved" banner).
+- `lk-end-session` Phase 5 asks for a one-line `lk-doctor` summary instead of the `--doctor-age`
+  flag the engine never had; `/resume-session` and `/audit-knowledge` references point at things
+  that exist. `CAPTURE.template.md`, `KNOWLEDGE-SYSTEM.md`, `README.md` and the open-question
+  template describe the v0.2 frontmatter.
+- `TYPE_ENUM`: `gotcha, workaround, schema, decision, pattern, runbook, reference, open-question,
+  correction`.
+- `--gate` is still built for a Stop hook, but no hook ships in this package any more; wiring one
+  is a project choice.
+
+
 ## 2026-07-25 — `govern-work` (the enforcement layer)
 
 **`okf_normalize` engine unchanged (still 0.8)** · new skill `govern-work` (`govern.py`,

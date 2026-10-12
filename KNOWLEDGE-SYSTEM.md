@@ -1,21 +1,24 @@
-# Knowledge System: init · backfill · end-session
+# Knowledge System: init · backfill · end-session · audit · doctor
 
 In-repo, git-tracked, provenance-checked knowledge base. Goal: distill a fact once, retrieve cheaply (don't re-derive from code/chat each session).
 
-Flow: `init` (scaffold) → `backfill` (seed, once) → `end-session` (capture, every session). All write `ai/memory/` through `okf_normalize.py`, reached per-project via the `ai/scripts/okf` shim.
-Optionally, `govern-work` sits on top as the enforcement layer — see its own `SKILL.md`; this doc
-covers the three capture skills only, and the Limitations section below notes exactly which of
-its own gaps `govern-work` closes.
+Flow: `init` (scaffold) → `backfill` (seed, once) → `lk-end-session` (capture, every session). All write `ai/memory/` through `okf_normalize.py`, reached per-project via the `ai/scripts/okf` shim.
+`lk-audit-knowledge` triages a bundle's quality (bursts, duplicates, low-information and stale
+notes) and `lk-doctor` checks the install and a project's wiring — each has its own `SKILL.md`.
+This doc covers the three capture skills and the format.
 
-## The three skills
+## The skills (all `lk-` = *local knowledge*, so they group together in `~/.claude/skills`)
 
 | Skill | Does | When |
 |---|---|---|
-| `init-ai-workspace` | Scaffold + normalize the `ai/` structure (and, if installed, `govern-work`'s scaffolding). Idempotent, non-destructive. | Onboard a project / fix format drift |
-| `backfill-memory` | Bulk-seed memory from static assets (notes, DB schema, config, code). Capped campaigns. Output is `status: unverified`. | Once, on un-distilled history |
-| `end-session` | Capture this session; beat the 3 deaths of context (chat ends / one machine / fresh clone). | Every session close |
+| `lk-init-ai-workspace` | Scaffold + normalize the `ai/` structure. Migrates a bundle to OKF v0.2. Idempotent, non-destructive. | Onboard a project / fix format drift |
+| `lk-backfill-memory` | Bulk-seed memory from static assets (notes, DB schema, config, code). Capped campaigns. Output is `status: draft`. | Once, on un-distilled history |
+| `lk-end-session` | Capture this session; beat the 3 deaths of context (chat ends / one machine / fresh clone). | Every session close |
+| `lk-audit-knowledge` | Quality triage of a bundle: machine bursts, near-duplicates, low-information, stale, orphans → an editable plan a human approves. | After a build campaign; before promoting a backfill |
+| `lk-doctor` | Health check of the install + a project's wiring: versions, drift vs the repo clone, phantom skill references, legacy vocabulary, shim paths. Safe fixes behind `--yes`. | After installing/upgrading; when anything feels off |
 
-`init` + `end-session` = operator-incremental. `backfill` = one-time mining.
+`init` + `lk-end-session` = operator-incremental. `backfill` = one-time mining.
+`audit` + `doctor` = keeping the other three honest.
 
 ## `ai/` folder structure
 
@@ -77,21 +80,27 @@ Global `~/.claude/.../memory/` (`user`/`feedback`/`project`/`reference`): machin
 
 ## OKF format
 
-`ai/memory/` = literal [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) (OKF) bundle: markdown + YAML frontmatter, one concept/file, non-empty `type`.
+`ai/memory/` = literal [Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format) (OKF) bundle: markdown + YAML frontmatter, one concept/file, non-empty `type`.
 
 ```yaml
 ---
 type: gotcha                      # OKF-required (non-empty); the one hard rule
 title: Short human title          # OKF-recommended
 description: one-line hook        # OKF-recommended; = this note's index line
-timestamp: 2026-06-19T00:00:00Z   # OKF-recommended; ISO 8601, last meaningful change
-created: 2026-06-19               # set-once
-source: src/auth/login.ts:42      # our extension; provenance (mandatory)
-status: unverified                # our extension; verified | unverified | stale
-valid_as_of: 2026-06-19           # optional; as-of date for a snapshot fact
-verified_on: 2026-06-19           # optional; --check warns after 90d
+generated:                        # OKF: producer + last meaningful change (was `timestamp`)
+  by: claude-code/claude-fable-5-1
+  at: '2026-06-19T00:00:00Z'
+created: '2026-06-19'             # our extension; set-once
+sources:                          # OKF: provenance (we make it mandatory; was `source:`)
+  - resource: src/auth/login.ts:42
+status: draft                     # OKF enum ONLY: draft | stable | deprecated (absent = stable)
+verified:                         # OKF: written only by `okf --promote` (a human act)
+  - by: human:krishna
+    at: '2026-06-19T00:00:00Z'
+stale_after: '2026-09-17T00:00:00Z'  # OKF: set by --promote (+90d); --check warns once passed
+valid_as_of: '2026-06-19'         # optional; as-of date for a snapshot fact
 tags: [auth]                      # optional; viewer tag filter
-relations:                        # optional; typed edges
+relations:                        # optional; our extension: typed edges
   - supersedes auth/decision_old-flow.md   # supersedes|extends|refines|contradicts|relates|duplicates
 ---
 
@@ -101,15 +110,16 @@ Distilled fact. Inline link related notes: [refresh flow](runbook_refresh-token.
 **Verify:** command / file:line / check that confirms it's still true.
 ```
 
-- `type` is the only hard requirement. `description`/`timestamp`/`tags` recommended; `source`/`status`/`Verify` are our extensions (OKF tolerates unknown keys). Don't stub optional fields.
-- Reserved (no frontmatter): `index.md` (lowercase TOC), optional `log.md`.
+- `type` is the only hard requirement. `generated`/`sources`/`status`/`verified`/`stale_after` are the spec's v0.2 keys with the spec's meanings (`status` ∈ `draft|stable|deprecated`; a `human:` actor in `verified` = human-reviewed trust tier). `created`/`relations`/`**Verify:**` are our extensions (OKF tolerates unknown keys). Don't stub optional fields.
+- Legacy bundles (`timestamp`/`source`/`verified_on`/`status: unverified|verified|stale`) migrate with `okf --apply`; `--check` treats the old keys as drift.
+- Reserved (not concepts): `index.md` (lowercase TOC; root one carries `okf_version: "0.2"`), optional `log.md`.
 - Graph = inline body links, not the index. No body links → disconnected dots.
 - Decision body: `Decision (NAME, DATE)` / `Why` / `Supersedes`.
 - Flat until ~20–25 notes, then fold by topic/domain (not by type; type stays in prefix).
 
 ## Conversation provenance (the `why` has a source too)
 
-`source: src/auth/login.ts:42` works when the fact lives in code. A **decision** doesn't: its *why*
+A `sources` entry of `src/auth/login.ts:42` works when the fact lives in code. A **decision** doesn't: its *why*
 was argued in a conversation. Cite that as prose (`session 2026-06-19`) and nobody can ever open it
 — the note becomes unfalsifiable, which is the one thing this bundle exists to prevent. Non-code
 work (analysis, dashboards, ops) is *mostly* decisions, so this is the common case, not the corner.
@@ -119,7 +129,7 @@ Two failures compound:
 2. **The source disappears.** Claude Code deletes session files older than `cleanupPeriodDays`
    (**default 30**) at startup. The citation dangles on day 31 — exactly when you'd want it.
 
-So `/end-session` Phase 0 archives the session into the repo, and `--check` treats a prose or
+So `/lk-end-session` Phase 0 archives the session into the repo, and `--check` treats a prose or
 unresolvable `source:` as a warning. A distilled transcript is to a decision what a commit hash is
 to code: the note may be wrong, but you can always walk back to what was said.
 
@@ -152,7 +162,7 @@ clearance**: passwords, connection strings, PII, and internal hostnames have no 
 
 ## Engine: `okf_normalize.py` (v0.8, OKF v0.1)
 
-One file, `pyyaml`-only. Lives once in the `init-ai-workspace` skill dir; hooks in `~/.claude/hooks/`; project carries only the 10-line `ai/scripts/okf` shim. Nothing vendored → one engine to upgrade.
+One file, `pyyaml`-only. Lives once in the `lk-init-ai-workspace` skill dir; hooks in `~/.claude/hooks/`; project carries only the 10-line `ai/scripts/okf` shim. Nothing vendored → one engine to upgrade.
 
 | Verb | Purpose |
 |---|---|
@@ -160,17 +170,18 @@ One file, `pyyaml`-only. Lives once in the `init-ai-workspace` skill dir; hooks 
 | `--apply` | rewrite frontmatter to canonical form |
 | `--reindex` | regenerate `index.md` from frontmatter |
 | `--move SRC DST` | move a note + rewrite inbound links |
-| `--review` | print `status: unverified` promotion queue |
+| `--review` | print the `status: draft` promotion queue |
+| `--promote PATH` | human promotion: `stable` + a `verified` entry (`human:` actor) + `stale_after` |
 | `--suggest-links` | surface note pairs not yet linked |
 | `--render` | regenerate graph HTML |
 | `--distill` | archive this session's transcript as a citable record (`distill_transcript.py`) |
 
-Indexes + graph are generated, never hand-written (`--reindex`; prose above `<!-- okf-index:auto -->` preserved). Viewer vendored from Google's `knowledge-catalog` enrichment-agent, Apache-2.0.
+Indexes + graph are generated, never hand-written (`--reindex`; prose above `<!-- okf-index:auto -->` preserved). Viewer vendored from Google's OKF reference agent (`knowledge-catalog` at vendoring time), Apache-2.0.
 
 ## Disciplines
 
 - Provenance or drop: every claim → quoted source slice; no cite = dropped.
-- Machine writes `unverified`; only a human promotes (`--review` queue).
+- Machine writes `draft` (+ `generated.by` naming the producer); only a human promotes (`--review` queue → `--promote`).
 - Adversarial verify: grep the cited quote exists; skeptic subagent for high-stakes.
 - Idempotent / non-destructive: append marker-gated; `git mv` keeps history.
 - Check git every session (untracked = lost on clone).
@@ -187,22 +198,16 @@ Indexes + graph are generated, never hand-written (`--reindex`; prose above `<!-
 
 ## Limitations
 
-- Operator-dependent; capture is not automatic. ~~Partially fixed for contracted work~~ —
-  `govern-work`'s `gov land` refuses to merge a contract without a completion report containing a
-  `## Decisions` section (`none` is a valid, explicit answer): for anything routed through the
-  contract runner, the ledger write is mandatory at the merge boundary, not optional mid-work.
-  Still fully operator-dependent for ordinary, non-contracted sessions — `end-session` is still
-  something a human has to remember to run.
-- ~~Promotion queue unbounded~~ — `govern-work`'s `gov --ratchet` / `gov --baseline` bound the
-  `status: unverified` count: `--ratchet` fails the gate if it rose above its committed baseline,
-  and `--baseline` can only ever be rewritten downward. **Nothing forces review** is still true —
-  the ratchet stops the queue from *growing*, it does not review anything in it; promotion from
-  `unverified` to `verified` is still a human-only act via `--review`.
-- No auto-merge; dedup is manual.
+- Operator-dependent; capture is not automatic — `lk-end-session` is something a human has to
+  remember to run.
+- Promotion queue unbounded. **Nothing forces review** — `lk-audit-knowledge` triages the queue
+  and flags drafts never promoted, but promotion from `draft` to `stable` is a human-only act via
+  `--review` + `--promote`.
+- No auto-merge; `lk-audit-knowledge` finds bursts and near-duplicates, a human merges.
 - Anti-hallucination gate is prompt-enforced, not guaranteed (codebase adapter = highest risk).
 - Graph edgeless unless notes inline-linked; `--suggest-links` is a hint.
 - Foldering heuristic needs human correction.
-- Decay only warns (90d), no re-verify.
+- Decay only warns (`stale_after`, 90d); re-verification is a human `--promote`.
 - Transcript archiving is per-session and manual: sessions before adoption are unrecoverable once
   `cleanupPeriodDays` (default 30) has pruned them, and raising the setting protects only what's left.
 - The distilled record holds no tool output by design — "we chose X because the benchmark showed Y"
@@ -212,14 +217,14 @@ Indexes + graph are generated, never hand-written (`--reindex`; prose above `<!-
 - Only Claude Code writes a transcript we can archive. On claude.ai / Cowork the source is a chat
   that no `source:` can durably resolve.
 - Tooling global, not vendored: clone lacks engine unless skill installed (shim exits 127); `--gate` hook global.
-- OKF v0.1; value-carrying extensions are local; other OKF tools ignore them.
+- OKF v0.2 vocabulary for provenance/trust/lifecycle, so other OKF consumers read them; `created`/`relations`/`**Verify:**` stay local extensions they ignore.
 - Cross-platform friction (Windows backslash paths, case-insensitive FS rename).
 
 ## Bottom line
 
-Trust rests on discipline + human review, not mechanism. Failure mode = a growing `unverified` queue + an edgeless graph, not a crash. Good scaffold for diligence, not a substitute for it.
+Trust rests on discipline + human review, not mechanism. Failure mode = a growing `draft` queue + an edgeless graph, not a crash. Good scaffold for diligence, not a substitute for it.
 
 ## Sources (external)
 
-- Open Knowledge Format (OKF) — Google Cloud Platform `knowledge-catalog`, Apache-2.0: <https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf>. Standard the bundle targets; graph viewer vendored from its `enrichment_agent`.
+- Open Knowledge Format (OKF) — Google Cloud Platform `open-knowledge-format` (formerly `knowledge-catalog/okf`), Apache-2.0: <https://github.com/GoogleCloudPlatform/open-knowledge-format>. Standard the bundle targets; graph viewer vendored from its `enrichment_agent`.
 - Note-shape prior art: `cq` knowledge commons (summary→detail→action, confirm-or-decay), `beads` (typed relations), Zep bi-temporal model (`valid_as_of`).
